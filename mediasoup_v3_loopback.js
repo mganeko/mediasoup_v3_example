@@ -5,7 +5,9 @@
 //
 //   This sample is using https://github.com/versatica/mediasoup
 //
-//   refer
+//   Thanks To:
+//     - https://lealog.hateblo.jp/entry/2019/03/25/180850
+//     - https://lealog.hateblo.jp/entry/2019/02/25/144511
 //     - https://github.com/leader22/mediasoup-demo-v3-simple/tree/master/server
 //     - https://github.com/mkhahani/mediasoup-sample-app
 //     - https://github.com/daily-co/mediasoup-sandbox
@@ -19,6 +21,12 @@
 //   npm install browserify
 // or
 //   npm install
+//
+// setup
+//   npm run build-client
+//
+// run
+//   npm run loopback
 
 'use strict';
 
@@ -333,16 +341,16 @@ async function createConsumer(producer, rtpCapabilities) {
     console.error('can not consume');
     return;
   }
-  try {
-    consumer = await consumerTransport.consume({
-      producerId: producer.id,
-      rtpCapabilities,
-      paused: producer.kind === 'video',
-    });
-  } catch (error) {
-    console.error('consume failed', error);
+
+  //consumer = await producerTransport.consume({ // NG: try use same trasport as producer (for loopback)
+  consumer = await consumerTransport.consume({ // OK
+    producerId: producer.id,
+    rtpCapabilities,
+    paused: producer.kind === 'video',
+  }).catch(err => {
+    console.error('consume failed', err);
     return;
-  }
+  });
 
   //if (consumer.type === 'simulcast') {
   //  await consumer.setPreferredLayers({ spatialLayer: 2, temporalLayer: 2 });
