@@ -22,7 +22,8 @@
   <button id="start_video_button" onclick="startMedia();">Start Media</button>
   <button id="stop_video_button" onclick="stopMedia();">Stop Media</button>
   &nbsp;
-  <button id="connect_button" onclick="connect();">Connect</button>
+  <button id="publish_button" onclick="publish();">publish</button>
+  <button id="subscribe_button" onclick="subscribe();">Subscribe</button>
   <button id="disconnect_button" onclick="dissconnect();">Disconnect</button>
   <div>
     local video<br />
@@ -42,6 +43,8 @@
   let device = null;
   let producerTransport = null;
   let producer = null;
+  let consumerTransport = null;
+  let consumer = null;
 
   // =========== socket.io ========== 
   let socket = null;
@@ -82,6 +85,9 @@
           console.error('UNKNOWN message from server:', message);
         }
       });
+      socket.on('newProducer', function (message) {
+        console.log('socket.io newProducer:', message);
+      });
     });
   }
 
@@ -91,6 +97,15 @@
       socket = null;
       clientId = null;
       console.log('socket.io closed..');
+    }
+  }
+
+  function isSocketConnected() {
+    if (socket) {
+      return true;
+    }
+    else {
+      return false;
     }
   }
 
@@ -221,7 +236,7 @@
     updateButtons();
   }
 
-  async function connect() {
+  async function publish() {
     if (!localStream) {
       console.warn('WARN: local media NOT READY');
       return;
@@ -239,16 +254,16 @@
     await loadDevice(data);
 
     // --- get transport info ---
-    console.log('--- send getTransport --');
-    const param = await sendRequest('getTransport', {});
-    console.log('transport param:', param);
-    producerTransport = device.createSendTransport(param);
+    console.log('--- createProducerTransport --');
+    const params = await sendRequest('createProducerTransport', {});
+    console.log('transport params:', params);
+    producerTransport = device.createSendTransport(params);
     console.log('createSendTransport:', producerTransport);
 
     // --- join & start publish --
     producerTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
       console.log('--trasnport connect');
-      sendRequest('connectProducerTransport', { dtlsParameters })
+      sendRequest('connectProducerTransport', { dtlsParameters: dtlsParameters })
         .then(callback)
         .catch(errback);
     });
@@ -292,7 +307,62 @@
     producer = await producerTransport.produce(trackParams);
   }
 
+  async function subscribe() {
+    if (!isSocketConnected()) {
+      return;
+    }
+
+    // --- prepare transport ---
+    console.log('--- createConsumerTransport --');
+    const params = await sendRequest('createConsumerTransport', {});
+    console.log('transport params:', params);
+    consumerTransport = device.createRecvTransport(params);
+    console.log('createConsumerTransport:', consumerTransport);
+
+    // --- join & start publish --
+    consumerTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
+      console.log('--trasnport connect');
+      sendRequest('connectConsumerTransport', { dtlsParameters: dtlsParameters })
+        .then(callback)
+        .catch(errback);
+    });
+
+    consumerTransport.on('connectionstatechange', (state) => {
+      switch (state) {
+        case 'connecting':
+          console.log('subscribing...');
+          break;
+
+        case 'connected':
+          console.log('subscribed');
+          break;
+
+        case 'failed':
+          console.log('failed');
+          producerTransport.close();
+          break;
+
+        default:
+          break;
+      }
+    });
+
+    await consume(consumerTransport);
+    console.log('--try resume --');
+    sendRequest('resume', {})
+      .then(() => {
+        console.log('resume OK');
+      })
+      .catch(err => {
+        console.error('resume ERROR:', err);
+      });
+  }
+
   function dissconnect() {
+    if (producerTransport) {
+      producerTransport.close(); // localStream will stop
+      producerTransport = null;
+    }
     disconnectSocket();
     updateButtons();
   }
@@ -307,6 +377,39 @@
     }
     await device.load({ routerRtpCapabilities });
   }
+
+  async function consume(transport) {
+    console.log('--start of consume --');
+    const { rtpCapabilities } = device;
+    //const data = await socket.request('consume', { rtpCapabilities });
+    const data = await sendRequest('consume', { rtpCapabilities })
+      .catch(err => {
+        console.error('consume ERROR:', err);
+      });
+    const {
+      producerId,
+      id,
+      kind,
+      rtpParameters,
+    } = data;
+
+    let codecOptions = {};
+    const consumer = await transport.consume({
+      id,
+      producerId,
+      kind,
+      rtpParameters,
+      codecOptions,
+    });
+    //const stream = new MediaStream();
+    //stream.addTrack(consumer.track);
+
+    addRemoteTrack(clientId, consumer.track);
+
+    console.log('--end of consume');
+    //return stream;
+  }
+
 
   // ---- UI control ----
   function updateButtons() {
