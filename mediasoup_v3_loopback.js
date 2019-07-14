@@ -151,7 +151,7 @@ io.on('connection', function (socket) {
     const { transport, params } = await createTransport();
     consumerTransport = transport;
     consumerTransport.observer.on('close', () => {
-      if (producer) {
+      if (consumer) {
         consumer.close();
         consumer = null;
       }
