@@ -1,0 +1,333 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta charset="charset=UTF-8" />
+  <title>mediasoup v3 loopback</title>
+  <!--
+   // mediasoup_v3_example
+   //   https://github.com/mganeko/mediasoup_v3_example
+   //   mediasoup_v3_example is provided under MIT license
+   //
+   //   This example is using https://github.com/versatica/mediasoup
+   //
+ -->
+  <script src="js/mediasoup-client.js"></script>
+  <script src="socket.io/socket.io.js"></script>
+</head>
+
+<body>
+  mediasoup v3 loopback with socket.io<br />
+  <button id="start_video_button" onclick="startMedia();">Start Media</button>
+  <button id="stop_video_button" onclick="stopMedia();">Stop Media</button>
+  &nbsp;
+  <button id="connect_button" onclick="connect();">Connect</button>
+  <button id="disconnect_button" onclick="dissconnect();">Disconnect</button>
+  <div>
+    local video<br />
+    <video id="local_video" autoplay style="width: 120px; height: 90px; border: 1px solid black;"></video>
+    <span id="state_span"></span>
+  </div>
+  remote video<br />
+  <div id="remote_container">
+  </div>
+</body>
+<script>
+  const localVideo = document.getElementById('local_video');
+  const remoteContainer = document.getElementById('remote_container');
+  const stateSpan = document.getElementById('state_span');
+  let localStream = null;
+  let clientId = null;
+  let device = null;
+  let producerTransport = null;
+  let producer = null;
+
+  // =========== socket.io ========== 
+  let socket = null;
+
+  // return Promise
+  function connectSocket() {
+    if (socket) {
+      socket.close();
+      socket = null;
+      clientId = null;
+    }
+
+    return new Promise((resolve, reject) => {
+      socket = io.connect('/');
+
+      socket.on('connect', function (evt) {
+        console.log('socket.io connected()');
+      });
+      socket.on('error', function (err) {
+        console.error('socket.io ERROR:', err);
+        reject(err);
+      });
+      socket.on('disconnect', function (evt) {
+        console.log('socket.io disconnect:', evt);
+      });
+      socket.on('message', function (message) {
+        console.log('socket.io message:', message);
+        if (message.type === 'welcome') {
+          if (socket.id !== message.id) {
+            console.warn('WARN: something wrong with clientID', socket.io, message.id);
+          }
+
+          clientId = message.id;
+          console.log('connected to server. clientId=' + clientId);
+          resolve();
+        }
+        else {
+          console.error('UNKNOWN message from server:', message);
+        }
+      });
+    });
+  }
+
+  function disconnectSocket() {
+    if (socket) {
+      socket.close();
+      socket = null;
+      clientId = null;
+      console.log('socket.io closed..');
+    }
+  }
+
+  function sendRequest(type, data) {
+    return new Promise((resolve, reject) => {
+      socket.emit(type, data, (err, response) => {
+        if (!err) {
+          // Success response, so pass the mediasoup response to the local Room.
+          resolve(response);
+        } else {
+          reject(err);
+        }
+      });
+    });
+  }
+
+  // =========== media handling ========== 
+  function stopLocalStream(stream) {
+    let tracks = stream.getTracks();
+    if (!tracks) {
+      console.warn('NO tracks');
+      return;
+    }
+
+    tracks.forEach(track => track.stop());
+  }
+
+  // return Promise
+  function playVideo(element, stream) {
+    if (element.srcObject) {
+      console.warn('element ALREADY playing, so ignore');
+      return;
+    }
+    element.srcObject = stream;
+    element.volume = 0;
+    return element.play();
+  }
+
+  function pauseVideo(element) {
+    element.pause();
+    element.srcObject = null;
+  }
+
+  function addRemoteTrack(id, track) {
+    let video = findRemoteVideo(id);
+    if (!video) {
+      video = addRemoteVideo(id);
+    }
+
+    if (video.srcObject) {
+      video.srcObject.addTrack(track);
+      return;
+    }
+
+    const newStream = new MediaStream();
+    newStream.addTrack(track);
+    playVideo(video, newStream).catch(err => { console.error('media ERROR:', err) });
+  }
+
+  function addRemoteVideo(id) {
+    let existElement = findRemoteVideo(id);
+    if (existElement) {
+      console.warn('remoteVideo element ALREADY exist for id=' + id);
+      return existElement;
+    }
+
+    let element = document.createElement('video');
+    remoteContainer.appendChild(element);
+    element.id = 'remote_' + id;
+    element.width = 240;
+    element.height = 180;
+    element.volume = 0;
+    //element.controls = true;
+    return element;
+  }
+
+  function findRemoteVideo(id) {
+    let element = document.getElementById('remote_' + id);
+    return element;
+  }
+
+  function removeRemoteVideo(id) {
+    console.log(' ---- removeRemoteVideo() id=' + id);
+    let element = document.getElementById('remote_' + id);
+    if (element) {
+      element.pause();
+      element.srcObject = null;
+      remoteContainer.removeChild(element);
+    }
+    else {
+      console.log('child element NOT FOUND');
+    }
+  }
+
+  function removeAllRemoteVideo() {
+    while (remoteContainer.firstChild) {
+      remoteContainer.firstChild.pause();
+      remoteContainer.firstChild.srcObject = null;
+      remoteContainer.removeChild(remoteContainer.firstChild);
+    }
+  }
+
+  // ============ UI button ==========
+
+  function startMedia() {
+    if (localStream) {
+      console.warn('WARN: local media ALREADY started');
+      return;
+    }
+
+    navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+      .then((stream) => {
+        localStream = stream;
+        playVideo(localVideo, localStream);
+        updateButtons();
+      })
+      .catch(err => {
+        console.error('media ERROR:', err);
+      });
+  }
+
+  function stopMedia() {
+    if (localStream) {
+      pauseVideo(localVideo);
+      stopLocalStream(localStream);
+      localStream = null;
+    }
+    updateButtons();
+  }
+
+  async function connect() {
+    if (!localStream) {
+      console.warn('WARN: local media NOT READY');
+      return;
+    }
+
+    // --- connect socket.io ---
+    await connectSocket().catch(err => {
+      console.error(err);
+      return;
+    });
+
+    // --- get capabilities --
+    const data = await sendRequest('getRouterRtpCapabilities', {});
+    console.log('getRouterRtpCapabilities:', data);
+    await loadDevice(data);
+
+    // --- get transport info ---
+    console.log('--- send getTransport --');
+    const param = await sendRequest('getTransport', {});
+    console.log('transport param:', param);
+    producerTransport = device.createSendTransport(param);
+    console.log('createSendTransport:', producerTransport);
+
+    // --- join & start publish --
+    producerTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
+      console.log('--trasnport connect');
+      sendRequest('connectProducerTransport', { dtlsParameters })
+        .then(callback)
+        .catch(errback);
+    });
+
+    producerTransport.on('produce', async ({ kind, rtpParameters }, callback, errback) => {
+      console.log('--trasnport produce');
+      try {
+        const { id } = await sendRequest('produce', {
+          transportId: producerTransport.id,
+          kind,
+          rtpParameters,
+        });
+        callback({ id });
+      } catch (err) {
+        errback(err);
+      }
+    });
+
+    producerTransport.on('connectionstatechange', (state) => {
+      switch (state) {
+        case 'connecting':
+          console.log('publishing...');
+          break;
+
+        case 'connected':
+          console.log('published');
+          break;
+
+        case 'failed':
+          console.log('failed');
+          producerTransport.close();
+          break;
+
+        default:
+          break;
+      }
+    });
+
+    const videoTrack = localStream.getVideoTracks()[0];
+    const trackParams = { track: videoTrack };
+    producer = await producerTransport.produce(trackParams);
+  }
+
+  function dissconnect() {
+    disconnectSocket();
+    updateButtons();
+  }
+
+  async function loadDevice(routerRtpCapabilities) {
+    try {
+      device = new MediasoupClient.Device();
+    } catch (error) {
+      if (error.name === 'UnsupportedError') {
+        console.error('browser not supported');
+      }
+    }
+    await device.load({ routerRtpCapabilities });
+  }
+
+  // ---- UI control ----
+  function updateButtons() {
+  }
+
+  function enabelElement(id) {
+    let element = document.getElementById(id);
+    if (element) {
+      element.removeAttribute('disabled');
+    }
+  }
+
+  function disableElement(id) {
+    let element = document.getElementById(id);
+    if (element) {
+      element.setAttribute('disabled', '1');
+    }
+  }
+
+  updateButtons();
+  console.log('=== ready ==='); 
+</script>
+
+</html>
