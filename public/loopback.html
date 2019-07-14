@@ -309,7 +309,15 @@
 
   async function subscribe() {
     if (!isSocketConnected()) {
-      return;
+      await connectSocket().catch(err => {
+        console.error(err);
+        return;
+      });
+
+      // --- get capabilities --
+      const data = await sendRequest('getRouterRtpCapabilities', {});
+      console.log('getRouterRtpCapabilities:', data);
+      await loadDevice(data);
     }
 
     // --- prepare transport ---
@@ -359,10 +367,33 @@
   }
 
   function dissconnect() {
+    if (localStream) {
+      pauseVideo(localVideo);
+      stopLocalStream(localStream);
+      localStream = null;
+    }
+    if (producer) {
+      producer.close(); // localStream will stop
+      producer = null;
+    }
     if (producerTransport) {
       producerTransport.close(); // localStream will stop
       producerTransport = null;
     }
+
+    if (consumer) {
+      consumer.close();
+      consumer = null;
+    }
+    if (consumerTransport) {
+      consumerTransport.close();
+      consumerTransport = null;
+    }
+
+    if (clientId) {
+      removeRemoteVideo(clientId);
+    }
+
     disconnectSocket();
     updateButtons();
   }

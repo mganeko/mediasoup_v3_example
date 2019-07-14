@@ -110,6 +110,13 @@ io.on('connection', function (socket) {
     console.log('-- createProducerTransport ---');
     const { transport, params } = await createTransport();
     producerTransport = transport;
+    producerTransport.observer.on('close', () => {
+      if (producer) {
+        producer.close();
+        producer = null;
+      }
+      producerTransport = null;
+    });
     //console.log('-- createProducerTransport params:', params);
     sendResponse(params, callback);
   });
@@ -135,6 +142,13 @@ io.on('connection', function (socket) {
     console.log('-- createConsumerTransport ---');
     const { transport, params } = await createTransport();
     consumerTransport = transport;
+    consumerTransport.observer.on('close', () => {
+      if (producer) {
+        consumer.close();
+        consumer = null;
+      }
+      consumerTransport = null;
+    });
     //console.log('-- createTransport params:', params);
     sendResponse(params, callback);
   });
@@ -147,7 +161,7 @@ io.on('connection', function (socket) {
 
   socket.on('consume', async (data, callback) => {
     console.log('-- consume ---');
-    const { consumer, params } = await createConsumer(producer, data.rtpCapabilities);
+    const { consumer, params } = await createConsumer(producer, data.rtpCapabilities); // producer must exist before consume
     subscribeConsumer = consumer;
     console.log('-- consumer ready ---');
     sendResponse(params, callback);
@@ -274,6 +288,7 @@ startWorker();
 // }
 //
 
+/*--
 function getTransport() {
   if (!producerTransport) {
     console.error('ERROR: producerTransport NOT READY');
@@ -290,6 +305,7 @@ function getTransport() {
     },
   };
 }
+--*/
 
 async function createTransport() {
   const transport = await router.createWebRtcTransport(mediasoupOptions.webRtcTransport);
