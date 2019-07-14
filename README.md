@@ -1,0 +1,24 @@
+# mediasoup_v3_example
+Examples for WebRTC SFU mediasoup v3 with node.js
+
+* mediasoup GitHub [https://github.com/versatica/mediasoup](https://github.com/versatica/mediasoup)
+* mediasoup Web site [https://mediasoup.org](https://mediasoup.org)
+* based on [mediasoup-sample-app by mkhahani](https://github.com/mkhahani/mediasoup-sample-app)
+* This sample is build for mediasoup v3.1. This does not work with mediasoup v1.x nor v2.x
+* This sample is check on macOS 10.13 High Sierra.
+* examples:
+  * simple loopback with Socket.io
+* TODO: TLS sample with socket.io.
+
+Node.jsで動くWebRTC SFU mediasoup v3のサンプルです。
+
+* v3.x用に作り直しました。v1.xやv2.xでは動作しません。
+* [mkhahaniさんのmediasoup-sample-app](https://github.com/mkhahani/mediasoup-sample-app)を参考にしています
+* macOS 10.13 High Sierraで動作確認しています
+
+
+
+# License / ライセンス
+
+* This samples are under the MIT license
+* このサンプルはMITランセンスで提供されます
