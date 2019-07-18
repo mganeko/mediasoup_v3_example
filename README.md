@@ -16,6 +16,57 @@ Node.jsで動くWebRTC SFU mediasoup v3のサンプルです。
 * [mkhahaniさんのmediasoup-sample-app](https://github.com/mkhahani/mediasoup-sample-app)を参考にしています
 * macOS 10.13 High Sierraで動作確認しています
 
+# Installation
+
+## git clone
+
+```
+$ https://github.com/mganeko/mediasoup_v3_example.git
+```
+
+## install npm modules
+
+```
+$ npm install socket.io
+$ npm install express
+$ npm install socket.io
+$ npm install mediasoup@3
+$ npm install mediasoup-client@3
+$ npm install browserify
+```
+
+or
+
+```
+$ npm install
+```
+
+## build client library
+
+```
+$ npm run build-client
+```
+
+# How to use
+
+## loopback (single)
+
+```
+$ npm run loopback
+```
+
+open http://localhost:3000/loopback.html with browser
+
+
+## broadcast (1 to many)
+
+```
+$ npm run broadast
+```
+
+open http://localhost:3000/loopback.html with browser
+
+## maltiparty video chat
 
 
 # License / ライセンス
