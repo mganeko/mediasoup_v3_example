@@ -68,6 +68,11 @@ open http://localhost:3000/loopback.html with browser
 
 ## maltiparty video chat
 
+```
+$ npm run multipartyu
+```
+
+open http://localhost:3000/multi.html with browser
 
 # License / ライセンス
 
