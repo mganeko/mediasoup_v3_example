@@ -160,16 +160,19 @@ io.on('connection', function (socket) {
 
   // --- consumer ----
   socket.on('createConsumerTransport', async (data, callback) => {
-    console.log('-- createConsumerTransport ---');
+    console.log('-- createConsumerTransport -- id=' + getId(socket));
     const { transport, params } = await createTransport();
     addConsumerTrasport(getId(socket), transport);
     transport.observer.on('close', () => {
-      const id = getId(socket);
+      const localId = getId(socket);
+      removeConsumerSetDeep(localId);
+      /*
       let consumer = getConsumer(getId(socket));
       if (consumer) {
         consumer.close();
         removeConsumer(id);
       }
+      */
       removeConsumerTransport(id);
     });
     //console.log('-- createTransport params:', params);
@@ -177,7 +180,7 @@ io.on('connection', function (socket) {
   });
 
   socket.on('connectConsumerTransport', async (data, callback) => {
-    console.log('-- connectConsumerTransport ---');
+    console.log('-- connectConsumerTransport -- id=' + getId(socket));
     let transport = getConsumerTrasnport(getId(socket));
     if (!transport) {
       console.error('transport NOT EXIST for id=' + getId(socket));
@@ -188,6 +191,9 @@ io.on('connection', function (socket) {
   });
 
   socket.on('consume', async (data, callback) => {
+    console.error('-- ERROR: consume NOT SUPPORTED ---');
+    return;
+    /*--
     console.log('-- consume ---');
     let transport = getConsumerTrasnport(getId(socket));
     if (!transport) {
@@ -204,9 +210,13 @@ io.on('connection', function (socket) {
 
     console.log('-- consumer ready ---');
     sendResponse(params, callback);
+    ---*/
   });
 
   socket.on('resume', async (data, callback) => {
+    console.error('-- ERROR: resume NOT SUPPORTED ---');
+    return;
+    /*--
     console.log('-- resume ---');
     let consumer = getConsumer(getId(socket));
     if (!consumer) {
@@ -215,6 +225,7 @@ io.on('connection', function (socket) {
     }
     await consumer.resume();
     sendResponse({}, callback);
+    --*/
   });
 
   socket.on('getCurrentProducers', async (data, callback) => {
@@ -223,19 +234,23 @@ io.on('connection', function (socket) {
 
     const producerIds = getProducerIds(clientId);
     console.log('-- producerIds:', producerIds);
-    sendResponse({ producerIds: producerIds }, callback);
+    const remoteIds = getRemoteIds(clientId);
+    console.log('-- remoteIds:', remoteIds);
+    sendResponse({ remoteIds: remoteIds, producerIds: producerIds }, callback);
   });
 
-  //　TODO: implemet this
   socket.on('consumeAdd', async (data, callback) => {
-    console.log('-- consumeAdd ---');
-    let transport = getConsumerTrasnport(getId(socket));
+    const localId = getId(socket);
+    console.log('-- consumeAdd -- localId=' + localId);
+
+    let transport = getConsumerTrasnport(localId);
     if (!transport) {
-      console.error('transport NOT EXIST for id=' + getId(socket));
+      console.error('transport NOT EXIST for id=' + localId);
       return;
     }
     const rtpCapabilities = data.rtpCapabilities;
-    const remoteId = data.id;
+    const remoteId = data.remoteId;
+    console.log('-- consumeAdd - localId=' + localId + ' remoteId=' + remoteId);
     const producer = getProducer(remoteId);
     if (!producer) {
       console.error('producer NOT EXIST for remoteId=' + remoteId);
@@ -243,8 +258,8 @@ io.on('connection', function (socket) {
     }
     const { consumer, params } = await createConsumer(transport, producer, rtpCapabilities); // producer must exist before consume
     //subscribeConsumer = consumer;
-    addConsumer(remoteId, consumer); // TODO: MUST comination of  local/remote id
-    console.log('addConsumer remoteId=' + remoteId);
+    addConsumer(localId, remoteId, consumer); // TODO: MUST comination of  local/remote id
+    console.log('addConsumer localId=' + localId + ', remoteId=' + remoteId);
     consumer.observer.on('close', () => {
       console.log('consumer closed ---');
     })
@@ -254,9 +269,10 @@ io.on('connection', function (socket) {
   });
 
   socket.on('resumeAdd', async (data, callback) => {
-    const remoteId = data.id;
-    console.log('-- resumeAdd remoteId=' + remoteId);
-    let consumer = getConsumer(remoteId);
+    const localId = getId(socket);
+    const remoteId = data.remoteId;
+    console.log('-- resumeAdd localId=' + localId + ', remoteId=' + remoteId);
+    let consumer = getConsumer(localId, remoteId);
     if (!consumer) {
       console.error('consumer NOT EXIST for remoteId=' + remoteId);
       return;
@@ -436,6 +452,17 @@ function getProducerIds(clientId) {
   return producerIds;
 }
 
+function getRemoteIds(clientId) {
+  let remoteIds = [];
+  for (const key in producers) {
+    if (key !== clientId) {
+      remoteIds.push(key);
+    }
+  }
+  return remoteIds;
+}
+
+
 function addProducer(id, producer) {
   producers[id] = producer;
   console.log('producers count=' + Object.keys(producers).length);
@@ -465,18 +492,62 @@ function removeConsumerTransport(id) {
   console.log('consumerTransports count=' + Object.keys(consumerTransports).length);
 }
 
-function getConsumer(id) {
-  return consumers[id];
+function getConsumerSet(localId) {
+  return consumers[localId];
+}
+function getConsumer(localId, remoteId) {
+  const set = getConsumerSet(localId);
+  if (set) {
+    return set[remoteId];
+  }
+  else {
+    return null;
+  }
 }
 
-function addConsumer(id, consumer) {
-  consumers[id] = consumer;
-  console.log('consumers count=' + Object.keys(consumers).length);
+function addConsumer(localId, remoteId, consumer) {
+  const set = getConsumerSet(localId);
+  if (set) {
+    set[remoteId] = consumer;
+    console.log('consumers count=' + Object.keys(set).length);
+  }
+  else {
+    console.log('new set for localId=' + localId);
+    const newSet = {};
+    newSet[remoteId] = consumer;
+    addConsumerSet(localId, newSet);
+    console.log('consumers count=' + Object.keys(newSet).length);
+  }
 }
 
-function removeConsumer(id) {
-  delete consumers[id];
-  console.log('consumers count=' + Object.keys(consumers).length);
+function removeConsumer(localId, remoteId) {
+  const set = getConsumerSet(localId);
+  if (set) {
+    delete set[remoteId];
+    console.log('consumers count=' + Object.keys(set).length);
+  }
+  else {
+    console.log('NO set for localId=' + localId);
+  }
+}
+
+function removeConsumerSetDeep(localId) {
+  const set = getConsumerSet(localId);
+  delete consumers[localId];
+
+  if (set) {
+    for (const key in set) {
+      const consumer = set[key];
+      consumer.close();
+      delete set[key];
+    }
+
+    console.log('removeConsumerSetDeep consumers count=' + Object.keys(set).length);
+  }
+}
+
+function addConsumerSet(localId, set) {
+  consumers[localId] = set;
 }
 
 async function createTransport() {

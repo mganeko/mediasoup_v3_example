@@ -186,6 +186,7 @@
     element.height = 180;
     element.volume = 0;
     //element.controls = true;
+    element.style = 'border: solid black 1px;';
     return element;
   }
 
@@ -284,7 +285,7 @@
           rtpParameters,
         });
         callback({ id });
-        console.log('--produce reqeested, subscribe ---');
+        console.log('--produce requested, then subscribe ---');
         subscribe();
       } catch (err) {
         errback(err);
@@ -339,7 +340,7 @@
 
     // --- join & start publish --
     consumerTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
-      console.log('--trasnport connect');
+      console.log('--consumer trasnport connect');
       sendRequest('connectConsumerTransport', { dtlsParameters: dtlsParameters })
         .then(callback)
         .catch(errback);
@@ -353,6 +354,7 @@
 
         case 'connected':
           console.log('subscribed');
+          //consumeCurrentProsucers(clientId);
           break;
 
         case 'failed':
@@ -370,16 +372,32 @@
     //   socketID or producerId
     //
 
-    const remoteIds = await sendRequest('getCurrentProducers', { localId: clientId })
+    /*--
+    const remoteInfo = await sendRequest('getCurrentProducers', { localId: clientId })
       .catch(err => {
         console.error('getCurrentProducers ERROR:', err);
         return;
       });
-    console.log('remoteIds.producerIds:', remoteIds.producerIds);
+    console.log('remoteInfo.producerIds:', remoteInfo.producerIds);
+    console.log('remoteInfo.remoteIds:', remoteInfo.remoteIds);
 
 
-    consumeAll(consumerTransport, remoteIds.producerIds);
+    consumeAll(consumerTransport, remoteInfo.remoteIds);
+    --*/
 
+    consumeCurrentProsucers(clientId);
+  }
+
+  async function consumeCurrentProsucers(clientId) {
+    console.log('-- try consuleAll() --');
+    const remoteInfo = await sendRequest('getCurrentProducers', { localId: clientId })
+      .catch(err => {
+        console.error('getCurrentProducers ERROR:', err);
+        return;
+      });
+    console.log('remoteInfo.producerIds:', remoteInfo.producerIds);
+    console.log('remoteInfo.remoteIds:', remoteInfo.remoteIds);
+    consumeAll(consumerTransport, remoteInfo.remoteIds);
   }
 
   function dissconnect() {
@@ -397,10 +415,12 @@
       producerTransport = null;
     }
 
-    if (consumer) {
+    for (const key in consumers) {
+      const consumer = consumers[key];
       consumer.close();
-      consumer = null;
+      delete consumers[key];
     }
+
     if (consumerTransport) {
       consumerTransport.close();
       consumerTransport = null;
@@ -425,6 +445,7 @@
     await device.load({ routerRtpCapabilities });
   }
 
+  /*--
   async function consume(transport) {
     console.log('--start of consume --');
     const { rtpCapabilities } = device;
@@ -456,8 +477,10 @@
     console.log('--end of consume');
     //return stream;
   }
+  --*/
 
   function consumeAll(transport, remoteIds) {
+    console.log('----- consumeAll() -----', remoteIds)
     remoteIds.forEach(rId => {
       consumeAdd(transport, rId, null);
       /*
@@ -477,7 +500,7 @@
     console.log('--start of consumeAdd --');
     const { rtpCapabilities } = device;
     //const data = await socket.request('consume', { rtpCapabilities });
-    const data = await sendRequest('consumeAdd', { rtpCapabilities: rtpCapabilities, id: remoteSocketId })
+    const data = await sendRequest('consumeAdd', { rtpCapabilities: rtpCapabilities, remoteId: remoteSocketId })
       .catch(err => {
         console.error('consumeAdd ERROR:', err);
       });
@@ -508,7 +531,7 @@
     console.log('--end of consumeAdd');
     //return stream;
     console.log('--try resumeAdd --');
-    sendRequest('resumeAdd', { id: remoteSocketId })
+    sendRequest('resumeAdd', { remoteId: remoteSocketId })
       .then(() => {
         console.log('resumeAdd OK');
       })
