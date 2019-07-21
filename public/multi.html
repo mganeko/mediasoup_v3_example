@@ -527,6 +527,25 @@
 
     addRemoteTrack(remoteSocketId, consumer.track);
     addConsumer(remoteSocketId, consumer);
+    consumer.remoteId = remoteSocketId;
+    consumer.on("transportclose", () => {
+      console.log('--consumer transport closed. remoteId=' + consumer.remoteId);
+      //consumer.close();
+      //removeConsumer(remoteId);
+      //removeRemoteVideo(consumer.remoteId);
+    });
+    consumer.on("producerclose", () => {
+      console.log('--consumer producer closed. remoteId=' + consumer.remoteId);
+      consumer.close();
+      removeConsumer(remoteId);
+      removeRemoteVideo(consumer.remoteId);
+    });
+    consumer.on('trackended', () => {
+      console.log('--consumer trackended. remoteId=' + consumer.remoteId);
+      //consumer.close();
+      //removeConsumer(remoteId);
+      //removeRemoteVideo(consumer.remoteId);
+    });
 
     console.log('--end of consumeAdd');
     //return stream;
