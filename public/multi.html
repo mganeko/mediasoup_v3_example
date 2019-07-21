@@ -95,6 +95,15 @@
         console.log('--try consumeAdd remoteId=' + remoteId + ', prdId=' + prdId);
         consumeAdd(consumerTransport, remoteId, prdId);
       });
+
+      socket.on('producerClosed', function (message) {
+        console.log('socket.io producerClosed:', message);
+        const localId = message.localId;
+        const remoteId = message.remoteId;
+        console.log('--try removeConsumer remoteId=' + remoteId + ', localId=' + localId);
+        removeConsumer(remoteId);
+        removeRemoteVideo(remoteId);
+      })
     });
   }
 
@@ -395,7 +404,7 @@
         console.error('getCurrentProducers ERROR:', err);
         return;
       });
-    console.log('remoteInfo.producerIds:', remoteInfo.producerIds);
+    //console.log('remoteInfo.producerIds:', remoteInfo.producerIds);
     console.log('remoteInfo.remoteIds:', remoteInfo.remoteIds);
     consumeAll(consumerTransport, remoteInfo.remoteIds);
   }

@@ -232,11 +232,11 @@ io.on('connection', function (socket) {
     const clientId = data.localId;
     console.log('-- getCurrentProducers for Id=' + clientId);
 
-    const producerIds = getProducerIds(clientId);
-    console.log('-- producerIds:', producerIds);
+    //const producerIds = getProducerIds(clientId);
+    //console.log('-- producerIds:', producerIds);
     const remoteIds = getRemoteIds(clientId);
     console.log('-- remoteIds:', remoteIds);
-    sendResponse({ remoteIds: remoteIds, producerIds: producerIds }, callback);
+    sendResponse({ remoteIds: remoteIds }, callback);
   });
 
   socket.on('consumeAdd', async (data, callback) => {
@@ -263,6 +263,14 @@ io.on('connection', function (socket) {
     consumer.observer.on('close', () => {
       console.log('consumer closed ---');
     })
+    consumer.on('producerclose', () => {
+      console.log('consumer -- on.producerclose');
+      consumer.close();
+      removeConsumer(localId, remoteId);
+
+      // -- notify to client ---
+      socket.emit('producerClosed', { localId: localId, remoteId: remoteId });
+    });
 
     console.log('-- consumer ready ---');
     sendResponse(params, callback);
@@ -305,6 +313,10 @@ function getId(socket) {
   return socket.id;
 }
 
+//function sendNotification(socket, message) {
+//  socket.emit('notificatinon', message);
+//}
+
 function getClientCount() {
   // WARN: undocumented method to get clients number
   return io.eio.clientsCount;
@@ -312,11 +324,14 @@ function getClientCount() {
 
 function cleanUpPeer(socket) {
   const id = getId(socket);
+  removeConsumerSetDeep(id);
+  /*
   const consumer = getConsumer(id);
   if (consumer) {
     consumer.close();
     removeConsumer(id);
   }
+  */
 
   const transport = getConsumerTrasnport(id);
   if (transport) {
@@ -442,6 +457,7 @@ function getProducer(id) {
   return producers[id];
 }
 
+/*
 function getProducerIds(clientId) {
   let producerIds = [];
   for (const key in producers) {
@@ -451,6 +467,7 @@ function getProducerIds(clientId) {
   }
   return producerIds;
 }
+*/
 
 function getRemoteIds(clientId) {
   let remoteIds = [];
