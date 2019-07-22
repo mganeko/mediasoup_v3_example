@@ -27,15 +27,14 @@
   <button id="stop_video_button" onclick="stopMedia();">Stop Media</button>
   &nbsp;
   <button id="connect_button" onclick="connect();">Connect</button>
-  <button id="disconnect_button" onclick="dissconnect();">Disconnect</button>
+  <button id="disconnect_button" onclick="disconnect();">Disconnect</button>
   <div>
     local video<br />
     <video id="local_video" autoplay style="width: 120px; height: 90px; border: 1px solid black;"></video>
     <span id="state_span"></span>
   </div>
   remote video<br />
-  <div id="remote_container">
-  </div>
+  <div id="remote_container"></div>
 </body>
 <script>
   const localVideo = document.getElementById('local_video');
@@ -219,6 +218,9 @@
 
   function removeAllRemoteVideo() {
     while (remoteContainer.firstChild) {
+      if (!remoteContainer.firstChild) {
+        break;
+      }
       remoteContainer.firstChild.pause();
       remoteContainer.firstChild.srcObject = null;
       remoteContainer.removeChild(remoteContainer.firstChild);
@@ -409,7 +411,7 @@
     consumeAll(consumerTransport, remoteInfo.remoteIds);
   }
 
-  function dissconnect() {
+  function disconnect() {
     if (localStream) {
       pauseVideo(localVideo);
       stopLocalStream(localStream);
@@ -435,9 +437,7 @@
       consumerTransport = null;
     }
 
-    if (clientId) {
-      removeRemoteVideo(clientId);
-    }
+    removeAllRemoteVideo();
 
     disconnectSocket();
     updateButtons();
