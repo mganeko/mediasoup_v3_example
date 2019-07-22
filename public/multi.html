@@ -267,6 +267,8 @@
       return;
     });
 
+    updateButtons();
+
     // --- get capabilities --
     const data = await sendRequest('getRouterRtpCapabilities', {});
     console.log('getRouterRtpCapabilities:', data);
@@ -585,6 +587,25 @@
 
   // ---- UI control ----
   function updateButtons() {
+    if (localStream) {
+      disableElement('start_video_button');
+      if (isSocketConnected()) {
+        disableElement('stop_video_button');
+        disableElement('connect_button');
+        enabelElement('disconnect_button');
+      }
+      else {
+        enabelElement('stop_video_button');
+        enabelElement('connect_button');
+        disableElement('disconnect_button');
+      }
+    }
+    else {
+      enabelElement('start_video_button');
+      disableElement('stop_video_button');
+      disableElement('connect_button');
+      disableElement('disconnect_button');
+    }
   }
 
   function enabelElement(id) {
