@@ -28,15 +28,14 @@
   &nbsp;
   <button id="publish_button" onclick="publish();">publish</button>
   <button id="subscribe_button" onclick="subscribe();">Subscribe</button>
-  <button id="disconnect_button" onclick="dissconnect();">Disconnect</button>
+  <button id="disconnect_button" onclick="disconnect();">Disconnect</button>
   <div>
     local video<br />
     <video id="local_video" autoplay style="width: 120px; height: 90px; border: 1px solid black;"></video>
     <span id="state_span"></span>
   </div>
   remote video<br />
-  <div id="remote_container">
-  </div>
+  <div id="remote_container"></div>
 </body>
 <script>
   const localVideo = document.getElementById('local_video');
@@ -183,6 +182,7 @@
     element.height = 180;
     element.volume = 0;
     //element.controls = true;
+    element.style = 'border: solid black 1px;';
     return element;
   }
 
@@ -252,6 +252,8 @@
       return;
     });
 
+    updateButtons();
+
     // --- get capabilities --
     const data = await sendRequest('getRouterRtpCapabilities', {});
     console.log('getRouterRtpCapabilities:', data);
@@ -309,6 +311,8 @@
     const videoTrack = localStream.getVideoTracks()[0];
     const trackParams = { track: videoTrack };
     producer = await producerTransport.produce(trackParams);
+
+    updateButtons();
   }
 
   async function subscribe() {
@@ -323,6 +327,8 @@
       console.log('getRouterRtpCapabilities:', data);
       await loadDevice(data);
     }
+
+    updateButtons();
 
     // --- prepare transport ---
     console.log('--- createConsumerTransport --');
@@ -368,9 +374,11 @@
       .catch(err => {
         console.error('resume ERROR:', err);
       });
+
+    updateButtons();
   }
 
-  function dissconnect() {
+  function disconnect() {
     if (localStream) {
       pauseVideo(localVideo);
       stopLocalStream(localStream);
@@ -394,9 +402,7 @@
       consumerTransport = null;
     }
 
-    if (clientId) {
-      removeRemoteVideo(clientId);
-    }
+    removeAllRemoteVideo();
 
     disconnectSocket();
     updateButtons();
@@ -448,7 +454,43 @@
 
   // ---- UI control ----
   function updateButtons() {
+    if (localStream) {
+      disableElement('start_video_button');
+      if (isSocketConnected()) {
+        disableElement('stop_video_button');
+      }
+      else {
+        enabelElement('stop_video_button');
+      }
+
+      if (producer) {
+        disableElement('publish_button');
+      }
+      else {
+        enabelElement('publish_button');
+      }
+    }
+    else {
+      enabelElement('start_video_button');
+      disableElement('stop_video_button');
+      disableElement('publish_button');
+    }
+
+    if (isSocketConnected()) {
+      enabelElement('disconnect_button');
+    }
+    else {
+      disableElement('disconnect_button');
+    }
+
+    if (consumer) {
+      disableElement('subscribe_button');
+    }
+    else {
+      enabelElement('subscribe_button');
+    }
   }
+
 
   function enabelElement(id) {
     let element = document.getElementById(id);
