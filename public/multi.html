@@ -218,9 +218,6 @@
 
   function removeAllRemoteVideo() {
     while (remoteContainer.firstChild) {
-      if (!remoteContainer.firstChild) {
-        break;
-      }
       remoteContainer.firstChild.pause();
       remoteContainer.firstChild.srcObject = null;
       remoteContainer.removeChild(remoteContainer.firstChild);
@@ -380,24 +377,6 @@
       }
     });
 
-    // TODO
-    // get current producers Info
-    //   socketID or producerId
-    //
-
-    /*--
-    const remoteInfo = await sendRequest('getCurrentProducers', { localId: clientId })
-      .catch(err => {
-        console.error('getCurrentProducers ERROR:', err);
-        return;
-      });
-    console.log('remoteInfo.producerIds:', remoteInfo.producerIds);
-    console.log('remoteInfo.remoteIds:', remoteInfo.remoteIds);
-
-
-    consumeAll(consumerTransport, remoteInfo.remoteIds);
-    --*/
-
     consumeCurrentProsucers(clientId);
   }
 
@@ -494,16 +473,6 @@
     console.log('----- consumeAll() -----', remoteIds)
     remoteIds.forEach(rId => {
       consumeAdd(transport, rId, null);
-      /*
-      console.log('--try resumeAdd --');
-      sendRequest('resumeAdd', { id: rId })
-        .then(() => {
-          console.log('resumeAdd OK');
-        })
-        .catch(err => {
-          console.error('resumeAdd ERROR:', err);
-        });
-      */
     });
   };
 
