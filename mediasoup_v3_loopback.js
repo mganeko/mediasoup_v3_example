@@ -143,6 +143,10 @@ io.on('connection', function (socket) {
     // inform clients about new producer
     console.log('--broadcast newProducer ---');
     socket.broadcast.emit('newProducer');
+    if (consumerTransport) {
+      console.log('-- emit newProducer --')
+      socket.emit('newProducer'); // send back too
+    }
   });
 
   // --- consumer ----
@@ -169,10 +173,17 @@ io.on('connection', function (socket) {
 
   socket.on('consume', async (data, callback) => {
     console.log('-- consume ---');
-    const { consumer, params } = await createConsumer(producer, data.rtpCapabilities); // producer must exist before consume
-    subscribeConsumer = consumer;
-    console.log('-- consumer ready ---');
-    sendResponse(params, callback);
+    if (producer) {
+      const { consumer, params } = await createConsumer(producer, data.rtpCapabilities); // producer must exist before consume
+      subscribeConsumer = consumer;
+      console.log('-- consumer ready ---');
+      sendResponse(params, callback);
+    }
+    else {
+      console.log('-- consume, but producer NOT READY');
+      const params = { producerId: null, id: null, kind: null, rtpParameters: {} };
+      sendResponse(params, callback);
+    }
   });
 
   socket.on('resume', async (data, callback) => {
@@ -212,6 +223,25 @@ function getClientCount() {
 
 function cleanUpPeer(socket) {
   const id = getId(socket);
+
+  if (subscribeConsumer) {
+    subscribeConsumer.close();
+    subscribeConsumer = null;
+  }
+  if (consumerTransport) {
+    consumerTransport.close();
+    consumerTransport = null;
+  }
+
+  if (producer) {
+    producer.close();
+    producer = null;
+  }
+
+  if (producerTransport) {
+    producerTransport.close();
+    producerTransport = null;
+  }
 }
 
 // ========= mediasoup ===========

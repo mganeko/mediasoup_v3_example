@@ -94,8 +94,12 @@
           console.error('UNKNOWN message from server:', message);
         }
       });
-      socket.on('newProducer', function (message) {
+      socket.on('newProducer', async function (message) {
         console.log('socket.io newProducer:', message);
+        if (consumerTransport) {
+          // start consume
+          consumer = await consumeAndResume(consumerTransport);
+        }
       });
     });
   }
@@ -343,12 +347,24 @@
     consumerTransport = device.createRecvTransport(params);
     console.log('createConsumerTransport:', consumerTransport);
 
+    // --- NG ---
+    //sendRequest('connectConsumerTransport', { dtlsParameters: dtlsParameters })
+    //  .then(callback)
+    //  .catch(errback);
+
+    // --- try --- not well
+    //sendRequest('connectConsumerTransport', { dtlsParameters: params.dtlsParameters })
+    //  .then(() => console.log('connectConsumerTransport OK'))
+    //  .catch(err => console.error('connectConsumerTransport ERROR:', err));
+
     // --- join & start publish --
     consumerTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
-      console.log('--trasnport connect');
+      console.log('--consumer trasnport connect');
       sendRequest('connectConsumerTransport', { dtlsParameters: dtlsParameters })
         .then(callback)
         .catch(errback);
+
+      //consumer = await consumeAndResume(consumerTransport);
     });
 
     consumerTransport.on('connectionstatechange', (state) => {
@@ -371,17 +387,47 @@
       }
     });
 
-    await consume(consumerTransport);
-    console.log('--try resume --');
-    sendRequest('resume', {})
-      .then(() => {
-        console.log('resume OK');
-      })
-      .catch(err => {
-        console.error('resume ERROR:', err);
-      });
+    /*
+    consumer = await consume(consumerTransport);
+    if (consumer) {
+      console.log('--try resume --');
+      sendRequest('resume', {})
+        .then(() => {
+          console.log('resume OK');
+        })
+        .catch(err => {
+          console.error('resume ERROR:', err);
+        });
 
-    updateButtons();
+      updateButtons();
+    }
+    else {
+      console.log('-- not try resume --');
+    }
+    */
+
+    consumer = await consumeAndResume(consumerTransport);
+  }
+
+  async function consumeAndResume(transport) {
+    const consumer = await consume(consumerTransport);
+    if (consumer) {
+      console.log('--try resume --');
+      updateButtons();
+      sendRequest('resume', {})
+        .then(() => {
+          console.log('resume OK');
+          return consumer;
+        })
+        .catch(err => {
+          console.error('resume ERROR:', err);
+          return consumer;
+        });
+    }
+    else {
+      console.log('-- not try resume --');
+      return null;
+    }
   }
 
   function disconnect() {
@@ -440,21 +486,30 @@
       rtpParameters,
     } = data;
 
-    let codecOptions = {};
-    const consumer = await transport.consume({
-      id,
-      producerId,
-      kind,
-      rtpParameters,
-      codecOptions,
-    });
-    //const stream = new MediaStream();
-    //stream.addTrack(consumer.track);
+    if (producerId) {
+      let codecOptions = {};
+      const consumer = await transport.consume({
+        id,
+        producerId,
+        kind,
+        rtpParameters,
+        codecOptions,
+      });
+      //const stream = new MediaStream();
+      //stream.addTrack(consumer.track);
 
-    addRemoteTrack(clientId, consumer.track);
+      addRemoteTrack(clientId, consumer.track);
 
-    console.log('--end of consume');
-    //return stream;
+      console.log('--end of consume');
+      //return stream;
+
+      return consumer;
+    }
+    else {
+      console.warn('--- remote producer NOT READY');
+
+      return null;
+    }
   }
 
 
