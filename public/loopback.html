@@ -257,17 +257,19 @@
     }
 
     // --- connect socket.io ---
-    await connectSocket().catch(err => {
-      console.error(err);
-      return;
-    });
+    if (!isSocketConnected()) {
+      await connectSocket().catch(err => {
+        console.error(err);
+        return;
+      });
+
+      // --- get capabilities --
+      const data = await sendRequest('getRouterRtpCapabilities', {});
+      console.log('getRouterRtpCapabilities:', data);
+      await loadDevice(data);
+    }
 
     updateButtons();
-
-    // --- get capabilities --
-    const data = await sendRequest('getRouterRtpCapabilities', {});
-    console.log('getRouterRtpCapabilities:', data);
-    await loadDevice(data);
 
     // --- get transport info ---
     console.log('--- createProducerTransport --');
@@ -407,6 +409,8 @@
     */
 
     consumer = await consumeAndResume(consumerTransport);
+
+    updateButtons();
   }
 
   async function consumeAndResume(transport) {
@@ -544,7 +548,7 @@
       disableElement('disconnect_button');
     }
 
-    if (consumer) {
+    if (consumerTransport) {
       disableElement('subscribe_button');
     }
     else {

@@ -147,6 +147,9 @@ io.on('connection', function (socket) {
       console.log('-- emit newProducer --')
       socket.emit('newProducer'); // send back too
     }
+    else {
+      console.log('consumerTransport is NULL:', consumerTransport);
+    }
   });
 
   // --- consumer ----
@@ -155,6 +158,7 @@ io.on('connection', function (socket) {
     const { transport, params } = await createTransport();
     consumerTransport = transport;
     consumerTransport.observer.on('close', () => {
+      console.log('-- consumerTransport closed ---');
       if (consumer) {
         consumer.close();
         consumer = null;
