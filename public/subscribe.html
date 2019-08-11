@@ -92,6 +92,23 @@
           consumer = await consumeAndResume(consumerTransport);
         }
       });
+
+      socket.on('producerClosed', function (message) {
+        console.log('socket.io producerClosed:', message);
+        const localId = message.localId;
+        const remoteId = message.remoteId;
+        console.log('--try removeConsumer remoteId=' + remoteId + ', localId=' + localId);
+        if (consumer) {
+          consumer.close();
+          consumer = null;
+        }
+        if (remoteId) {
+          removeRemoteVideo(remoteId);
+        }
+        else {
+          removeAllRemoteVideo();
+        }
+      })
     });
   }
 

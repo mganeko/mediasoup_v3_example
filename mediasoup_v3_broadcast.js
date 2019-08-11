@@ -139,6 +139,9 @@ io.on('connection', function (socket) {
     console.log('-- produce ---');
     const { kind, rtpParameters } = data;
     producer = await producerTransport.produce({ kind, rtpParameters });
+    producer.observer.on('close', () => {
+      console.log('producer closed ---');
+    })
     sendResponse({ id: producer.id }, callback);
 
     // inform clients about new producer
@@ -153,6 +156,7 @@ io.on('connection', function (socket) {
     addConsumerTrasport(getId(socket), transport);
     transport.observer.on('close', () => {
       const id = getId(socket);
+      console.log('--- consumerTransport closed. --')
       let consumer = getConsumer(getId(socket));
       if (consumer) {
         consumer.close();
@@ -186,10 +190,19 @@ io.on('connection', function (socket) {
       }
       const { consumer, params } = await createConsumer(transport, producer, data.rtpCapabilities); // producer must exist before consume
       //subscribeConsumer = consumer;
-      addConsumer(getId(socket), consumer);
+      const id = getId(socket);
+      addConsumer(id, consumer);
       consumer.observer.on('close', () => {
         console.log('consumer closed ---');
       })
+      consumer.on('producerclose', () => {
+        console.log('consumer -- on.producerclose');
+        consumer.close();
+        removeConsumer(id);
+
+        // -- notify to client ---
+        socket.emit('producerClosed', { localId: id, remoteId: producerSocketId });
+      });
 
       console.log('-- consumer ready ---');
       sendResponse(params, callback);
@@ -269,6 +282,10 @@ function cleanUpPeer(socket) {
     }
 
     producerSocketId = null;
+
+    // --- clenaup all consumers ---
+    //console.log('---- cleanup clenaup all consumers ---');
+    //removeAllConsumers();
   }
 }
 
@@ -386,6 +403,17 @@ function addConsumer(id, consumer) {
 function removeConsumer(id) {
   delete consumers[id];
   console.log('consumers count=' + Object.keys(consumers).length);
+}
+
+function removeAllConsumers() {
+  for (const key in consumers) {
+    const consumer = consumers[key];
+    console.log('key=' + key + ',  consumer:', consumer);
+    consumer.close();
+    delete consumers[key];
+  }
+  console.log('removeAllConsumers consumers count=' + Object.keys(consumers).length);
+  console.log('removeAllConsumers transports count=' + Object.keys(transports).length);
 }
 
 async function createTransport() {
