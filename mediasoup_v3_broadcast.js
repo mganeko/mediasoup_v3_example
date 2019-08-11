@@ -116,6 +116,7 @@ io.on('connection', function (socket) {
   // --- producer ----
   socket.on('createProducerTransport', async (data, callback) => {
     console.log('-- createProducerTransport ---');
+    producerSocketId = getId(socket);
     const { transport, params } = await createTransport();
     producerTransport = transport;
     producerTransport.observer.on('close', () => {
@@ -168,6 +169,7 @@ io.on('connection', function (socket) {
     let transport = getConsumerTrasnport(getId(socket));
     if (!transport) {
       console.error('transport NOT EXIST for id=' + getId(socket));
+      sendResponse({}, callback);
       return;
     }
     await transport.connect({ dtlsParameters: data.dtlsParameters });
@@ -176,20 +178,27 @@ io.on('connection', function (socket) {
 
   socket.on('consume', async (data, callback) => {
     console.log('-- consume ---');
-    let transport = getConsumerTrasnport(getId(socket));
-    if (!transport) {
-      console.error('transport NOT EXIST for id=' + getId(socket));
-      return;
-    }
-    const { consumer, params } = await createConsumer(transport, producer, data.rtpCapabilities); // producer must exist before consume
-    //subscribeConsumer = consumer;
-    addConsumer(getId(socket), consumer);
-    consumer.observer.on('close', () => {
-      console.log('consumer closed ---');
-    })
+    if (producer) {
+      let transport = getConsumerTrasnport(getId(socket));
+      if (!transport) {
+        console.error('transport NOT EXIST for id=' + getId(socket));
+        return;
+      }
+      const { consumer, params } = await createConsumer(transport, producer, data.rtpCapabilities); // producer must exist before consume
+      //subscribeConsumer = consumer;
+      addConsumer(getId(socket), consumer);
+      consumer.observer.on('close', () => {
+        console.log('consumer closed ---');
+      })
 
-    console.log('-- consumer ready ---');
-    sendResponse(params, callback);
+      console.log('-- consumer ready ---');
+      sendResponse(params, callback);
+    }
+    else {
+      console.log('-- consume, but producer NOT READY');
+      const params = { producerId: null, id: null, kind: null, rtpParameters: {} };
+      sendResponse(params, callback);
+    }
   });
 
   socket.on('resume', async (data, callback) => {
@@ -197,6 +206,7 @@ io.on('connection', function (socket) {
     let consumer = getConsumer(getId(socket));
     if (!consumer) {
       console.error('consumer NOT EXIST for id=' + getId(socket));
+      sendResponse({}, callback);
       return;
     }
     await consumer.resume();
@@ -244,6 +254,21 @@ function cleanUpPeer(socket) {
   if (transport) {
     transport.close();
     removeConsumerTransport(id);
+  }
+
+  if (producerSocketId === id) {
+    console.log('---- cleanup producer ---');
+    if (producer) {
+      producer.close();
+      producer = null;
+    }
+
+    if (producerTransport) {
+      producerTransport.close();
+      producerTransport = null;
+    }
+
+    producerSocketId = null;
   }
 }
 
@@ -307,6 +332,7 @@ let worker = null;
 let router = null;
 let producerTransport = null;
 let producer = null;
+let producerSocketId = null;
 //let consumerTransport = null;
 //let subscribeConsumer = null;
 
