@@ -64,12 +64,15 @@ open http://localhost:3000/loopback.html with browser
 $ npm run broadast
 ```
 
-open http://localhost:3000/loopback.html with browser
+open http://localhost:3000/publish.html with browser for publisher
+
+open http://localhost:3000/subscribe.html with browser for subscriber
+
 
 ## maltiparty video chat
 
 ```
-$ npm run multipartyu
+$ npm run multiparty
 ```
 
 open http://localhost:3000/multi.html with browser

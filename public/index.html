@@ -21,17 +21,31 @@
 
 <body>
   mediasoup v3 examples<br />
-  <lu>
-    <li>
-      loopback ... <a href="loopback.html" target="_blank">loopback.html</a> </li>
-    <li>
-      pubsub ... <a href="publish.html" target="_blank">publish.html</a> &nbsp; <a href="subscribe.html"
-        target="_blank"> subscribe.html</a>
+  <ul>
+    <li>loopback ... single clinet-server video loopback
+      <ul>
+        <li>run server: npm run loopback</li>
+        <li>open with browser: <a href="loopback.html" target="_blank">loopback.html</a></li>
+      </ul>
     </li>
+
     <li>
-      multi-party ... <a href="multi.html" target="_blank">multi.html</a> </li>
+      broadcast ... publish video from 1 pub client, subscribe video by multiple sub client
+      <ul>
+        <li>run server: npm run broadcast</li>
+        <li>publisher clinet with browser: <a href="publish.html" target="_blank">publish.html</a></li>
+        <li>subscriber clinet with browser: <a href="subscribe.html" target="_blank">subscribe.html</a></li>
+      </ul>
     </li>
-  </lu>
+
+    <li>
+      multi-party ... video chat for multi-party
+      <ul>
+        <li>run server: npm run multiparty</li>
+        <li>open with browser: <a href="multi.html" target="_blank">multi.html</a></li>
+      </ul>
+    </li>
+  </ul>
 </body>
 
 </html>
