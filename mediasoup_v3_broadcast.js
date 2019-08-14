@@ -120,9 +120,13 @@ io.on('connection', function (socket) {
     const { transport, params } = await createTransport();
     producerTransport = transport;
     producerTransport.observer.on('close', () => {
-      if (producer) {
-        producer.close();
-        producer = null;
+      if (videoProducer) {
+        videoProducer.close();
+        videoProducer = null;
+      }
+      if (audioProducer) {
+        audioProducer.close();
+        audioProducer = null;
       }
       producerTransport = null;
     });
@@ -136,17 +140,31 @@ io.on('connection', function (socket) {
   });
 
   socket.on('produce', async (data, callback) => {
-    console.log('-- produce ---');
     const { kind, rtpParameters } = data;
-    producer = await producerTransport.produce({ kind, rtpParameters });
-    producer.observer.on('close', () => {
-      console.log('producer closed ---');
-    })
-    sendResponse({ id: producer.id }, callback);
+    console.log('-- produce --- kind=', kind);
+    if (kind === 'video') {
+      videoProducer = await producerTransport.produce({ kind, rtpParameters });
+      videoProducer.observer.on('close', () => {
+        console.log('videoProducer closed ---');
+      })
+      sendResponse({ id: videoProducer.id }, callback);
+    }
+    else if (kind === 'audio') {
+      audioProducer = await producerTransport.produce({ kind, rtpParameters });
+      audioProducer.observer.on('close', () => {
+        console.log('audioProducer closed ---');
+      })
+      sendResponse({ id: audioProducer.id }, callback);
+    }
+    else {
+      console.error('produce ERROR. BAD kind:', kind);
+      //sendResponse({}, callback);
+      return;
+    }
 
     // inform clients about new producer
-    console.log('--broadcast newProducer ---');
-    socket.broadcast.emit('newProducer');
+    console.log('--broadcast newProducer -- kind=', kind);
+    socket.broadcast.emit('newProducer', { kind: kind });
   });
 
   // --- consumer ----
@@ -157,10 +175,10 @@ io.on('connection', function (socket) {
     transport.observer.on('close', () => {
       const id = getId(socket);
       console.log('--- consumerTransport closed. --')
-      let consumer = getConsumer(getId(socket));
+      let consumer = getVideoConsumer(getId(socket));
       if (consumer) {
         consumer.close();
-        removeConsumer(id);
+        removeVideoConsumer(id);
       }
       removeConsumerTransport(id);
     });
@@ -181,49 +199,94 @@ io.on('connection', function (socket) {
   });
 
   socket.on('consume', async (data, callback) => {
-    console.log('-- consume ---');
-    if (producer) {
-      let transport = getConsumerTrasnport(getId(socket));
-      if (!transport) {
-        console.error('transport NOT EXIST for id=' + getId(socket));
-        return;
+    const kind = data.kind;
+    console.log('-- consume --kind=' + kind);
+
+    if (kind === 'video') {
+      if (videoProducer) {
+        let transport = getConsumerTrasnport(getId(socket));
+        if (!transport) {
+          console.error('transport NOT EXIST for id=' + getId(socket));
+          return;
+        }
+        const { consumer, params } = await createConsumer(transport, videoProducer, data.rtpCapabilities); // producer must exist before consume
+        //subscribeConsumer = consumer;
+        const id = getId(socket);
+        addVideoConsumer(id, consumer);
+        consumer.observer.on('close', () => {
+          console.log('consumer closed ---');
+        })
+        consumer.on('producerclose', () => {
+          console.log('consumer -- on.producerclose');
+          consumer.close();
+          removeVideoConsumer(id);
+
+          // -- notify to client ---
+          socket.emit('producerClosed', { localId: id, remoteId: producerSocketId, kind: 'video' });
+        });
+
+        console.log('-- consumer ready ---');
+        sendResponse(params, callback);
       }
-      const { consumer, params } = await createConsumer(transport, producer, data.rtpCapabilities); // producer must exist before consume
-      //subscribeConsumer = consumer;
-      const id = getId(socket);
-      addConsumer(id, consumer);
-      consumer.observer.on('close', () => {
-        console.log('consumer closed ---');
-      })
-      consumer.on('producerclose', () => {
-        console.log('consumer -- on.producerclose');
-        consumer.close();
-        removeConsumer(id);
+      else {
+        console.log('-- consume, but video producer NOT READY');
+        const params = { producerId: null, id: null, kind: 'video', rtpParameters: {} };
+        sendResponse(params, callback);
+      }
+    }
+    else if (kind === 'audio') {
+      if (audioProducer) {
+        let transport = getConsumerTrasnport(getId(socket));
+        if (!transport) {
+          console.error('transport NOT EXIST for id=' + getId(socket));
+          return;
+        }
+        const { consumer, params } = await createConsumer(transport, audioProducer, data.rtpCapabilities); // producer must exist before consume
+        //subscribeConsumer = consumer;
+        const id = getId(socket);
+        addAudioConsumer(id, consumer);
+        consumer.observer.on('close', () => {
+          console.log('consumer closed ---');
+        })
+        consumer.on('producerclose', () => {
+          console.log('consumer -- on.producerclose');
+          consumer.close();
+          removeAudioConsumer(id);
 
-        // -- notify to client ---
-        socket.emit('producerClosed', { localId: id, remoteId: producerSocketId });
-      });
+          // -- notify to client ---
+          socket.emit('producerClosed', { localId: id, remoteId: producerSocketId, kind: 'audio' });
+        });
 
-      console.log('-- consumer ready ---');
-      sendResponse(params, callback);
+        console.log('-- consumer ready ---');
+        sendResponse(params, callback);
+      }
+      else {
+        console.log('-- consume, but video producer NOT READY');
+        const params = { producerId: null, id: null, kind: 'video', rtpParameters: {} };
+        sendResponse(params, callback);
+      }
     }
     else {
-      console.log('-- consume, but producer NOT READY');
-      const params = { producerId: null, id: null, kind: null, rtpParameters: {} };
-      sendResponse(params, callback);
+      console.error('ERROR: UNKNOWN kind=' + kind);
     }
   });
 
   socket.on('resume', async (data, callback) => {
-    console.log('-- resume ---');
-    let consumer = getConsumer(getId(socket));
-    if (!consumer) {
-      console.error('consumer NOT EXIST for id=' + getId(socket));
+    const kind = data.kind;
+    console.log('-- resume -- kind=' + kind);
+    if (kind === 'video') {
+      let consumer = getVideoConsumer(getId(socket));
+      if (!consumer) {
+        console.error('consumer NOT EXIST for id=' + getId(socket));
+        sendResponse({}, callback);
+        return;
+      }
+      await consumer.resume();
       sendResponse({}, callback);
-      return;
     }
-    await consumer.resume();
-    sendResponse({}, callback);
+    else {
+      console.warn('NO resume for audio');
+    }
   });
 
   // ---- sendback welcome message with on connected ---
@@ -257,10 +320,10 @@ function getClientCount() {
 
 function cleanUpPeer(socket) {
   const id = getId(socket);
-  const consumer = getConsumer(id);
+  const consumer = getVideoConsumer(id);
   if (consumer) {
     consumer.close();
-    removeConsumer(id);
+    removeVideoConsumer(id);
   }
 
   const transport = getConsumerTrasnport(id);
@@ -271,9 +334,13 @@ function cleanUpPeer(socket) {
 
   if (producerSocketId === id) {
     console.log('---- cleanup producer ---');
-    if (producer) {
-      producer.close();
-      producer = null;
+    if (videoProducer) {
+      videoProducer.close();
+      videoProducer = null;
+    }
+    if (audioProducer) {
+      audioProducer.close();
+      audioProducer = null;
     }
 
     if (producerTransport) {
@@ -348,7 +415,8 @@ const mediasoupOptions = {
 let worker = null;
 let router = null;
 let producerTransport = null;
-let producer = null;
+let videoProducer = null;
+let audioProducer = null;
 let producerSocketId = null;
 //let consumerTransport = null;
 //let subscribeConsumer = null;
@@ -375,7 +443,8 @@ startWorker();
 
 // --- multi-consumers --
 let transports = {};
-let consumers = {};
+let videoConsumers = {};
+let audioConsumers = {};
 
 function getConsumerTrasnport(id) {
   return transports[id];
@@ -391,29 +460,49 @@ function removeConsumerTransport(id) {
   console.log('consumerTransports count=' + Object.keys(transports).length);
 }
 
-function getConsumer(id) {
-  return consumers[id];
+function getVideoConsumer(id) {
+  return videoConsumers[id];
 }
 
-function addConsumer(id, consumer) {
-  consumers[id] = consumer;
-  console.log('consumers count=' + Object.keys(consumers).length);
+function addVideoConsumer(id, consumer) {
+  videoConsumers[id] = consumer;
+  console.log('videoConsumers count=' + Object.keys(videoConsumers).length);
 }
 
-function removeConsumer(id) {
-  delete consumers[id];
-  console.log('consumers count=' + Object.keys(consumers).length);
+function removeVideoConsumer(id) {
+  delete videoConsumers[id];
+  console.log('videoConsumers count=' + Object.keys(videoConsumers).length);
+}
+
+function getAudioConsumer(id) {
+  return audioConsumers[id];
+}
+
+function addAudioConsumer(id, consumer) {
+  audioConsumers[id] = consumer;
+  console.log('audioConsumers count=' + Object.keys(audioConsumers).length);
+}
+
+function removeAudioConsumer(id) {
+  delete audioConsumers[id];
+  console.log('audioConsumers count=' + Object.keys(audioConsumers).length);
 }
 
 function removeAllConsumers() {
-  for (const key in consumers) {
-    const consumer = consumers[key];
+  for (const key in videoConsumers) {
+    const consumer = videoConsumers[key];
     console.log('key=' + key + ',  consumer:', consumer);
     consumer.close();
-    delete consumers[key];
+    delete videoConsumers[key];
   }
-  console.log('removeAllConsumers consumers count=' + Object.keys(consumers).length);
-  console.log('removeAllConsumers transports count=' + Object.keys(transports).length);
+  console.log('removeAllConsumers videoConsumers count=' + Object.keys(videoConsumers).length);
+
+  for (const key in audioConsumers) {
+    const consumer = audioConsumers[key];
+    console.log('key=' + key + ',  consumer:', consumer);
+    consumer.close();
+    delete audioConsumers[key];
+  }
 }
 
 async function createTransport() {

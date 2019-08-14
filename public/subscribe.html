@@ -38,10 +38,11 @@
   let clientId = null;
   let device = null;
   let consumerTransport = null;
-  let consumer = null;
+  let videoConsumer = null;
+  let audioConsumer = null;
 
   // ---- TODO ----
-  //  - check can consumer for subcribe
+  //  DONE - (check can consumer for subcribe) --> subscribe before publish
   //  - audio track
   //  - multiple rooms
 
@@ -89,7 +90,12 @@
         console.log('socket.io newProducer:', message);
         if (consumerTransport) {
           // start consume
-          consumer = await consumeAndResume(consumerTransport);
+          if (message.kind === 'video') {
+            videoConsumer = await consumeAndResume(consumerTransport, message.kind);
+          }
+          else if (message.kind === 'audio') {
+            audioConsumer = await consumeAndResume(consumerTransport, message.kind);
+          }
         }
       });
 
@@ -97,11 +103,21 @@
         console.log('socket.io producerClosed:', message);
         const localId = message.localId;
         const remoteId = message.remoteId;
-        console.log('--try removeConsumer remoteId=' + remoteId + ', localId=' + localId);
-        if (consumer) {
-          consumer.close();
-          consumer = null;
+        const kind = message.kind;
+        console.log('--try removeConsumer remoteId=' + remoteId + ', localId=' + localId + ', kind=' + kind);
+        if (kind === 'video') {
+          if (videoConsumer) {
+            videoConsumer.close();
+            videoConsumer = null;
+          }
         }
+        else if (kind === 'audio') {
+          if (audioConsumer) {
+            audioConsumer.close();
+            audioConsumer = null;
+          }
+        }
+
         if (remoteId) {
           removeRemoteVideo(remoteId);
         }
@@ -185,7 +201,9 @@
 
     const newStream = new MediaStream();
     newStream.addTrack(track);
-    playVideo(video, newStream).catch(err => { console.error('media ERROR:', err) });
+    playVideo(video, newStream)
+      .then(() => { video.volume = 1.0 })
+      .catch(err => { console.error('media ERROR:', err) });
   }
 
   function addRemoteVideo(id) {
@@ -297,37 +315,47 @@
       }
     });
 
-    consumer = await consumeAndResume(consumerTransport);
+    videoConsumer = await consumeAndResume(consumerTransport, 'video');
+    audioConsumer = await consumeAndResume(consumerTransport, 'audio');
 
     updateButtons();
   }
 
-  async function consumeAndResume(transport) {
-    const consumer = await consume(consumerTransport);
+  async function consumeAndResume(transport, kind) {
+    const consumer = await consume(consumerTransport, kind);
     if (consumer) {
-      console.log('--try resume --');
+      console.log('-- track exist, consumer ready. kind=' + kind);
       updateButtons();
-      sendRequest('resume', {})
-        .then(() => {
-          console.log('resume OK');
-          return consumer;
-        })
-        .catch(err => {
-          console.error('resume ERROR:', err);
-          return consumer;
-        });
+      if (kind === 'video') {
+        console.log('-- resume kind=' + kind);
+        sendRequest('resume', { kind: kind })
+          .then(() => {
+            console.log('resume OK');
+            return consumer;
+          })
+          .catch(err => {
+            console.error('resume ERROR:', err);
+            return consumer;
+          });
+      }
+      else {
+        console.log('-- do not resume kind=' + kind);
+      }
     }
     else {
-      console.log('-- not try resume --');
+      console.log('-- no consumer yet. kind=' + kind);
       return null;
     }
   }
 
   function disconnect() {
-
-    if (consumer) {
-      consumer.close();
-      consumer = null;
+    if (videoConsumer) {
+      videoConsumer.close();
+      videoConsumer = null;
+    }
+    if (audioConsumer) {
+      audioConsumer.close();
+      audioConsumer = null;
     }
     if (consumerTransport) {
       consumerTransport.close();
@@ -351,11 +379,11 @@
     await device.load({ routerRtpCapabilities });
   }
 
-  async function consume(transport) {
-    console.log('--start of consume --');
+  async function consume(transport, trackKind) {
+    console.log('--start of consume --kind=' + trackKind);
     const { rtpCapabilities } = device;
     //const data = await socket.request('consume', { rtpCapabilities });
-    const data = await sendRequest('consume', { rtpCapabilities })
+    const data = await sendRequest('consume', { rtpCapabilities: rtpCapabilities, kind: trackKind })
       .catch(err => {
         console.error('consume ERROR:', err);
       });

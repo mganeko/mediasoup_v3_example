@@ -23,6 +23,8 @@
 
 <body>
   mediasoup v3 publish with socket.io<br />
+  <input type="checkbox" id="use_video" checked="1">video</input>
+  <input type="checkbox" id="use_audio" checked="1">audio</input>
   <button id="start_video_button" onclick="startMedia();">Start Media</button>
   <button id="stop_video_button" onclick="stopMedia();">Stop Media</button>
   &nbsp;
@@ -30,7 +32,7 @@
   <button id="disconnect_button" onclick="disconnect();">Disconnect</button>
   <div>
     local video<br />
-    <video id="local_video" autoplay style="width: 120px; height: 90px; border: 1px solid black;"></video>
+    <video id="local_video" autoplay style="width: 240px; height: 180px; border: 1px solid black;"></video>
     <span id="state_span"></span>
   </div>
 </body>
@@ -41,7 +43,8 @@
   let clientId = null;
   let device = null;
   let producerTransport = null;
-  let producer = null;
+  let videoProduer = null;
+  let audioProduer = null;
 
   // ---- TODO ----
   //  - audio track
@@ -154,13 +157,26 @@
 
   // ============ UI button ==========
 
+  function checkUseVideo() {
+    const useVideo = document.getElementById('use_video').checked;
+    return useVideo;
+  }
+
+  function checkUseAudio() {
+    const useAudio = document.getElementById('use_audio').checked;
+    return useAudio;
+  }
+
   function startMedia() {
     if (localStream) {
       console.warn('WARN: local media ALREADY started');
       return;
     }
 
-    navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+    const useVideo = checkUseVideo();
+    const useAudio = checkUseAudio();
+
+    navigator.mediaDevices.getUserMedia({ audio: useAudio, video: useVideo })
       .then((stream) => {
         localStream = stream;
         playVideo(localVideo, localStream);
@@ -250,9 +266,18 @@
       }
     });
 
-    const videoTrack = localStream.getVideoTracks()[0];
-    const trackParams = { track: videoTrack };
-    producer = await producerTransport.produce(trackParams);
+    const useVideo = checkUseVideo();
+    const useAudio = checkUseAudio();
+    if (useVideo) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      const trackParams = { track: videoTrack };
+      videoProduer = await producerTransport.produce(trackParams);
+    }
+    if (useAudio) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      const trackParams = { track: audioTrack };
+      audioProduer = await producerTransport.produce(trackParams);
+    }
 
     updateButtons();
   }
@@ -263,9 +288,13 @@
       stopLocalStream(localStream);
       localStream = null;
     }
-    if (producer) {
-      producer.close(); // localStream will stop
-      producer = null;
+    if (videoProduer) {
+      videoProduer.close(); // localStream will stop
+      videoProduer = null;
+    }
+    if (audioProduer) {
+      audioProduer.close(); // localStream will stop
+      audioProduer = null;
     }
     if (producerTransport) {
       producerTransport.close(); // localStream will stop
@@ -299,7 +328,7 @@
         enabelElement('stop_video_button');
       }
 
-      if (producer) {
+      if (videoProduer || audioProduer) {
         disableElement('publish_button');
       }
       else {
