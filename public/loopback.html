@@ -23,6 +23,8 @@
 
 <body>
   mediasoup v3 loopback with socket.io<br />
+  <input type="checkbox" id="use_video" checked="1">video</input>
+  <input type="checkbox" id="use_audio" checked="1">audio</input>
   <button id="start_video_button" onclick="startMedia();">Start Media</button>
   <button id="stop_video_button" onclick="stopMedia();">Stop Media</button>
   &nbsp;
@@ -45,12 +47,14 @@
   let clientId = null;
   let device = null;
   let producerTransport = null;
-  let producer = null;
+  let videoProducer = null;
+  let audioProducer = null;
   let consumerTransport = null;
-  let consumer = null;
+  let videoConsumer = null;
+  let audioConsumer = null;
 
   // ---- TODO ----
-  //  - check can consumer for subcribe
+  //  DONE - (check can consumer for subcribe) --> subscribe before publish
   //  - audio track
   //  - multiple rooms
 
@@ -98,7 +102,12 @@
         console.log('socket.io newProducer:', message);
         if (consumerTransport) {
           // start consume
-          consumer = await consumeAndResume(consumerTransport);
+          if (message.kind === 'video') {
+            videoConsumer = await consumeAndResume(consumerTransport, message.kind);
+          }
+          else if (message.kind === 'audio') {
+            audioConsumer = await consumeAndResume(consumerTransport, message.kind);
+          }
         }
       });
     });
@@ -175,7 +184,9 @@
 
     const newStream = new MediaStream();
     newStream.addTrack(track);
-    playVideo(video, newStream).catch(err => { console.error('media ERROR:', err) });
+    playVideo(video, newStream)
+      .then(() => { video.volume = 1.0 })
+      .catch(err => { console.error('media ERROR:', err) });
   }
 
   function addRemoteVideo(id) {
@@ -223,6 +234,15 @@
   }
 
   // ============ UI button ==========
+  function checkUseVideo() {
+    const useVideo = document.getElementById('use_video').checked;
+    return useVideo;
+  }
+
+  function checkUseAudio() {
+    const useAudio = document.getElementById('use_audio').checked;
+    return useAudio;
+  }
 
   function startMedia() {
     if (localStream) {
@@ -230,7 +250,10 @@
       return;
     }
 
-    navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+    const useVideo = checkUseVideo();
+    const useAudio = checkUseAudio();
+
+    navigator.mediaDevices.getUserMedia({ audio: useAudio, video: useVideo })
       .then((stream) => {
         localStream = stream;
         playVideo(localVideo, localStream);
@@ -320,9 +343,18 @@
       }
     });
 
-    const videoTrack = localStream.getVideoTracks()[0];
-    const trackParams = { track: videoTrack };
-    producer = await producerTransport.produce(trackParams);
+    const useVideo = checkUseVideo();
+    const useAudio = checkUseAudio();
+    if (useVideo) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      const trackParams = { track: videoTrack };
+      videoProducer = await producerTransport.produce(trackParams);
+    }
+    if (useAudio) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      const trackParams = { track: audioTrack };
+      audioProdcuer = await producerTransport.produce(trackParams);
+    }
 
     updateButtons();
   }
@@ -389,30 +421,40 @@
       }
     });
 
-    /*
-    consumer = await consume(consumerTransport);
-    if (consumer) {
-      console.log('--try resume --');
-      sendRequest('resume', {})
-        .then(() => {
-          console.log('resume OK');
-        })
-        .catch(err => {
-          console.error('resume ERROR:', err);
-        });
-
-      updateButtons();
-    }
-    else {
-      console.log('-- not try resume --');
-    }
-    */
-
-    consumer = await consumeAndResume(consumerTransport);
+    videoConsumer = await consumeAndResume(consumerTransport, 'video');
+    audioConsumer = await consumeAndResume(consumerTransport, 'audio');
 
     updateButtons();
   }
 
+  async function consumeAndResume(transport, kind) {
+    const consumer = await consume(consumerTransport, kind);
+    if (consumer) {
+      console.log('-- track exist, consumer ready. kind=' + kind);
+      updateButtons();
+      if (kind === 'video') {
+        console.log('-- resume kind=' + kind);
+        sendRequest('resume', { kind: kind })
+          .then(() => {
+            console.log('resume OK');
+            return consumer;
+          })
+          .catch(err => {
+            console.error('resume ERROR:', err);
+            return consumer;
+          });
+      }
+      else {
+        console.log('-- do not resume kind=' + kind);
+      }
+    }
+    else {
+      console.log('-- no consumer yet. kind=' + kind);
+      return null;
+    }
+  }
+
+  /*
   async function consumeAndResume(transport) {
     const consumer = await consume(consumerTransport);
     if (consumer) {
@@ -433,6 +475,8 @@
       return null;
     }
   }
+  */
+
 
   function disconnect() {
     if (localStream) {
@@ -440,18 +484,26 @@
       stopLocalStream(localStream);
       localStream = null;
     }
-    if (producer) {
-      producer.close(); // localStream will stop
-      producer = null;
+    if (videoProducer) {
+      videoProducer.close(); // localStream will stop
+      videoProducer = null;
+    }
+    if (audioProducer) {
+      audioProducer.close(); // localStream will stop
+      audioProducer = null;
     }
     if (producerTransport) {
       producerTransport.close(); // localStream will stop
       producerTransport = null;
     }
 
-    if (consumer) {
-      consumer.close();
-      consumer = null;
+    if (videoConsumer) {
+      videoConsumer.close();
+      videoConsumer = null;
+    }
+    if (audioConsumer) {
+      audioConsumer.close();
+      audioConsumer = null;
     }
     if (consumerTransport) {
       consumerTransport.close();
@@ -475,11 +527,11 @@
     await device.load({ routerRtpCapabilities });
   }
 
-  async function consume(transport) {
-    console.log('--start of consume --');
+  async function consume(transport, trackKind) {
+    console.log('--start of consume --kind=' + trackKind);
     const { rtpCapabilities } = device;
     //const data = await socket.request('consume', { rtpCapabilities });
-    const data = await sendRequest('consume', { rtpCapabilities })
+    const data = await sendRequest('consume', { rtpCapabilities: rtpCapabilities, kind: trackKind })
       .catch(err => {
         console.error('consume ERROR:', err);
       });
@@ -528,7 +580,7 @@
         enabelElement('stop_video_button');
       }
 
-      if (producer) {
+      if (videoProducer || audioProducer) {
         disableElement('publish_button');
       }
       else {
