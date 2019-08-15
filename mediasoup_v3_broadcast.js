@@ -261,8 +261,8 @@ io.on('connection', function (socket) {
         sendResponse(params, callback);
       }
       else {
-        console.log('-- consume, but video producer NOT READY');
-        const params = { producerId: null, id: null, kind: 'video', rtpParameters: {} };
+        console.log('-- consume, but audio producer NOT READY');
+        const params = { producerId: null, id: null, kind: 'audio', rtpParameters: {} };
         sendResponse(params, callback);
       }
     }
