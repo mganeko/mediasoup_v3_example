@@ -43,8 +43,8 @@
   let clientId = null;
   let device = null;
   let producerTransport = null;
-  let videoProduer = null;
-  let audioProduer = null;
+  let videoProducer = null;
+  let audioProducer = null;
 
   // ---- TODO ----
   //  DONE - audio track
@@ -271,12 +271,12 @@
     if (useVideo) {
       const videoTrack = localStream.getVideoTracks()[0];
       const trackParams = { track: videoTrack };
-      videoProduer = await producerTransport.produce(trackParams);
+      videoProducer = await producerTransport.produce(trackParams);
     }
     if (useAudio) {
       const audioTrack = localStream.getAudioTracks()[0];
       const trackParams = { track: audioTrack };
-      audioProduer = await producerTransport.produce(trackParams);
+      audioProducer = await producerTransport.produce(trackParams);
     }
 
     updateButtons();
@@ -288,13 +288,13 @@
       stopLocalStream(localStream);
       localStream = null;
     }
-    if (videoProduer) {
-      videoProduer.close(); // localStream will stop
-      videoProduer = null;
+    if (videoProducer) {
+      videoProducer.close(); // localStream will stop
+      videoProducer = null;
     }
-    if (audioProduer) {
-      audioProduer.close(); // localStream will stop
-      audioProduer = null;
+    if (audioProducer) {
+      audioProducer.close(); // localStream will stop
+      audioProducer = null;
     }
     if (producerTransport) {
       producerTransport.close(); // localStream will stop
@@ -328,7 +328,7 @@
         enabelElement('stop_video_button');
       }
 
-      if (videoProduer || audioProduer) {
+      if (videoProducer || audioProducer) {
         disableElement('publish_button');
       }
       else {
