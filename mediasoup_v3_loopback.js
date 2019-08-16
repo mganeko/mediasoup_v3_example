@@ -180,9 +180,13 @@ io.on('connection', function (socket) {
     consumerTransport = transport;
     consumerTransport.observer.on('close', () => {
       console.log('-- consumerTransport closed ---');
-      if (consumer) {
-        consumer.close();
-        consumer = null;
+      if (videoConsumer) {
+        videoConsumer.close();
+        videoConsumer = null;
+      }
+      if (audioConsumer) {
+        audioConsumer.close();
+        audioConsumer = null;
       }
       consumerTransport = null;
     });
