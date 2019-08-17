@@ -23,6 +23,8 @@
 
 <body>
   mediasoup v3 multiparty with socket.io<br />
+  <input type="checkbox" id="use_video" checked="1">video</input>
+  <input type="checkbox" id="use_audio" checked="1">audio</input>
   <button id="start_video_button" onclick="startMedia();">Start Media</button>
   <button id="stop_video_button" onclick="stopMedia();">Stop Media</button>
   &nbsp;
@@ -44,9 +46,11 @@
   let clientId = null;
   let device = null;
   let producerTransport = null;
-  let producer = null;
+  let videoProducer = null;
+  let audioProducer = null;
   let consumerTransport = null;
-  let consumers = {};
+  let videoConsumers = {};
+  let audioConsumers = {};
 
   // ---- TODO ----
   //  - audio track
@@ -95,16 +99,25 @@
         console.log('socket.io newProducer:', message);
         const remoteId = message.socketId;
         const prdId = message.producerId;
-        console.log('--try consumeAdd remoteId=' + remoteId + ', prdId=' + prdId);
-        consumeAdd(consumerTransport, remoteId, prdId);
+        const kind = message.kind;
+        if (kind === 'video') {
+          console.log('--try consumeAdd remoteId=' + remoteId + ', prdId=' + prdId + ', kind=' + kind);
+          consumeAdd(consumerTransport, remoteId, prdId, kind);
+        }
+        else if (kind === 'audio') {
+          //console.warn('-- audio NOT SUPPORTED YET. skip remoteId=' + remoteId + ', prdId=' + prdId + ', kind=' + kind);
+          console.log('--try consumeAdd remoteId=' + remoteId + ', prdId=' + prdId + ', kind=' + kind);
+          consumeAdd(consumerTransport, remoteId, prdId, kind);
+        }
       });
 
       socket.on('producerClosed', function (message) {
         console.log('socket.io producerClosed:', message);
         const localId = message.localId;
         const remoteId = message.remoteId;
-        console.log('--try removeConsumer remoteId=' + remoteId + ', localId=' + localId);
-        removeConsumer(remoteId);
+        const kind = message.kind;
+        console.log('--try removeConsumer remoteId=%s, localId=%s, track=%s', remoteId, localId, kind);
+        removeConsumer(remoteId, kind);
         removeRemoteVideo(remoteId);
       })
     });
@@ -172,6 +185,7 @@
     let video = findRemoteVideo(id);
     if (!video) {
       video = addRemoteVideo(id);
+      video.controls = '1';
     }
 
     if (video.srcObject) {
@@ -181,7 +195,9 @@
 
     const newStream = new MediaStream();
     newStream.addTrack(track);
-    playVideo(video, newStream).catch(err => { console.error('media ERROR:', err) });
+    playVideo(video, newStream)
+      .then(() => { video.volume = 1.0 })
+      .catch(err => { console.error('media ERROR:', err) });
   }
 
   function addRemoteVideo(id) {
@@ -230,13 +246,26 @@
 
   // ============ UI button ==========
 
+  function checkUseVideo() {
+    const useVideo = document.getElementById('use_video').checked;
+    return useVideo;
+  }
+
+  function checkUseAudio() {
+    const useAudio = document.getElementById('use_audio').checked;
+    return useAudio;
+  }
+
   function startMedia() {
     if (localStream) {
       console.warn('WARN: local media ALREADY started');
       return;
     }
 
-    navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+    const useVideo = checkUseVideo();
+    const useAudio = checkUseAudio();
+
+    navigator.mediaDevices.getUserMedia({ audio: useAudio, video: useVideo })
       .then((stream) => {
         localStream = stream;
         playVideo(localVideo, localStream);
@@ -326,9 +355,20 @@
       }
     });
 
-    const videoTrack = localStream.getVideoTracks()[0];
-    const trackParams = { track: videoTrack };
-    producer = await producerTransport.produce(trackParams);
+    const useVideo = checkUseVideo();
+    const useAudio = checkUseAudio();
+    if (useVideo) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      const trackParams = { track: videoTrack };
+      videoProducer = await producerTransport.produce(trackParams);
+    }
+    if (useAudio) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      const trackParams = { track: audioTrack };
+      audioProducer = await producerTransport.produce(trackParams);
+    }
+
+    updateButtons();
   }
 
   async function subscribe() {
@@ -347,44 +387,46 @@
 
     // --- prepare transport ---
     console.log('--- createConsumerTransport --');
-    const params = await sendRequest('createConsumerTransport', {});
-    console.log('transport params:', params);
-    consumerTransport = device.createRecvTransport(params);
-    console.log('createConsumerTransport:', consumerTransport);
+    if (!consumerTransport) {
+      const params = await sendRequest('createConsumerTransport', {});
+      console.log('transport params:', params);
+      consumerTransport = device.createRecvTransport(params);
+      console.log('createConsumerTransport:', consumerTransport);
 
-    // --- join & start publish --
-    consumerTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
-      console.log('--consumer trasnport connect');
-      sendRequest('connectConsumerTransport', { dtlsParameters: dtlsParameters })
-        .then(callback)
-        .catch(errback);
-    });
+      // --- join & start publish --
+      consumerTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
+        console.log('--consumer trasnport connect');
+        sendRequest('connectConsumerTransport', { dtlsParameters: dtlsParameters })
+          .then(callback)
+          .catch(errback);
+      });
 
-    consumerTransport.on('connectionstatechange', (state) => {
-      switch (state) {
-        case 'connecting':
-          console.log('subscribing...');
-          break;
+      consumerTransport.on('connectionstatechange', (state) => {
+        switch (state) {
+          case 'connecting':
+            console.log('subscribing...');
+            break;
 
-        case 'connected':
-          console.log('subscribed');
-          //consumeCurrentProsucers(clientId);
-          break;
+          case 'connected':
+            console.log('subscribed');
+            //consumeCurrentProducers(clientId);
+            break;
 
-        case 'failed':
-          console.log('failed');
-          producerTransport.close();
-          break;
+          case 'failed':
+            console.log('failed');
+            producerTransport.close();
+            break;
 
-        default:
-          break;
-      }
-    });
+          default:
+            break;
+        }
+      });
 
-    consumeCurrentProsucers(clientId);
+      consumeCurrentProducers(clientId);
+    }
   }
 
-  async function consumeCurrentProsucers(clientId) {
+  async function consumeCurrentProducers(clientId) {
     console.log('-- try consuleAll() --');
     const remoteInfo = await sendRequest('getCurrentProducers', { localId: clientId })
       .catch(err => {
@@ -392,8 +434,9 @@
         return;
       });
     //console.log('remoteInfo.producerIds:', remoteInfo.producerIds);
-    console.log('remoteInfo.remoteIds:', remoteInfo.remoteIds);
-    consumeAll(consumerTransport, remoteInfo.remoteIds);
+    console.log('remoteInfo.remoteVideoIds:', remoteInfo.remoteVideoIds);
+    console.log('remoteInfo.remoteAudioIds:', remoteInfo.remoteAudioIds);
+    consumeAll(consumerTransport, remoteInfo.remoteVideoIds, remoteInfo.remoteAudioIds);
   }
 
   function disconnect() {
@@ -402,19 +445,28 @@
       stopLocalStream(localStream);
       localStream = null;
     }
-    if (producer) {
-      producer.close(); // localStream will stop
-      producer = null;
+    if (videoProducer) {
+      videoProducer.close(); // localStream will stop
+      videoProducer = null;
+    }
+    if (audioProducer) {
+      audioProducer.close(); // localStream will stop
+      audioProducer = null;
     }
     if (producerTransport) {
       producerTransport.close(); // localStream will stop
       producerTransport = null;
     }
 
-    for (const key in consumers) {
-      const consumer = consumers[key];
+    for (const key in videoConsumers) {
+      const consumer = videoConsumers[key];
       consumer.close();
-      delete consumers[key];
+      delete videoConsumers[key];
+    }
+    for (const key in audioConsumers) {
+      const consumer = audioConsumers[key];
+      consumer.close();
+      delete audioConsumers[key];
     }
 
     if (consumerTransport) {
@@ -473,18 +525,21 @@
   }
   --*/
 
-  function consumeAll(transport, remoteIds) {
-    console.log('----- consumeAll() -----', remoteIds)
-    remoteIds.forEach(rId => {
-      consumeAdd(transport, rId, null);
+  function consumeAll(transport, remoteVideoIds, remotAudioIds) {
+    console.log('----- consumeAll() -----')
+    remoteVideoIds.forEach(rId => {
+      consumeAdd(transport, rId, null, 'video');
+    });
+    remotAudioIds.forEach(rId => {
+      consumeAdd(transport, rId, null, 'audio');
     });
   };
 
-  async function consumeAdd(transport, remoteSocketId, prdId) {
-    console.log('--start of consumeAdd --');
+  async function consumeAdd(transport, remoteSocketId, prdId, trackKind) {
+    console.log('--start of consumeAdd -- kind=%s', trackKind);
     const { rtpCapabilities } = device;
     //const data = await socket.request('consume', { rtpCapabilities });
-    const data = await sendRequest('consumeAdd', { rtpCapabilities: rtpCapabilities, remoteId: remoteSocketId })
+    const data = await sendRequest('consumeAdd', { rtpCapabilities: rtpCapabilities, remoteId: remoteSocketId, kind: trackKind })
       .catch(err => {
         console.error('consumeAdd ERROR:', err);
       });
@@ -510,7 +565,7 @@
     //stream.addTrack(consumer.track);
 
     addRemoteTrack(remoteSocketId, consumer.track);
-    addConsumer(remoteSocketId, consumer);
+    addConsumer(remoteSocketId, consumer, kind);
     consumer.remoteId = remoteSocketId;
     consumer.on("transportclose", () => {
       console.log('--consumer transport closed. remoteId=' + consumer.remoteId);
@@ -521,7 +576,7 @@
     consumer.on("producerclose", () => {
       console.log('--consumer producer closed. remoteId=' + consumer.remoteId);
       consumer.close();
-      removeConsumer(remoteId);
+      removeConsumer(remoteId, kind);
       removeRemoteVideo(consumer.remoteId);
     });
     consumer.on('trackended', () => {
@@ -533,29 +588,58 @@
 
     console.log('--end of consumeAdd');
     //return stream;
-    console.log('--try resumeAdd --');
-    sendRequest('resumeAdd', { remoteId: remoteSocketId })
-      .then(() => {
-        console.log('resumeAdd OK');
-      })
-      .catch(err => {
-        console.error('resumeAdd ERROR:', err);
-      });
+
+    if (kind === 'video') {
+      console.log('--try resumeAdd --');
+      sendRequest('resumeAdd', { remoteId: remoteSocketId, kind: kind })
+        .then(() => {
+          console.log('resumeAdd OK');
+        })
+        .catch(err => {
+          console.error('resumeAdd ERROR:', err);
+        });
+    }
   }
 
 
-  function getConsumer(id) {
-    return consumers[id];
+  function getConsumer(id, kind) {
+    if (kind === 'video') {
+      return videoConsumers[id];
+    }
+    else if (kind === 'audio') {
+      return audioConsumers[id];
+    }
+    else {
+      console.warn('UNKNOWN consumer kind=' + kind);
+    }
   }
 
-  function addConsumer(id, consumer) {
-    consumers[id] = consumer;
-    console.log('consumers count=' + Object.keys(consumers).length);
+  function addConsumer(id, consumer, kind) {
+    if (kind === 'video') {
+      videoConsumers[id] = consumer;
+      console.log('videoConsumers count=' + Object.keys(videoConsumers).length);
+    }
+    else if (kind === 'audio') {
+      audioConsumers[id] = consumer;
+      console.log('audioConsumers count=' + Object.keys(audioConsumers).length);
+    }
+    else {
+      console.warn('UNKNOWN consumer kind=' + kind);
+    }
   }
 
-  function removeConsumer(id) {
-    delete consumers[id];
-    console.log('consumers count=' + Object.keys(consumers).length);
+  function removeConsumer(id, kind) {
+    if (kind === 'video') {
+      delete videoConsumers[id];
+      console.log('videoConsumers count=' + Object.keys(videoConsumers).length);
+    }
+    else if (kind === 'audio') {
+      delete audioConsumers[id];
+      console.log('audioConsumers count=' + Object.keys(audioConsumers).length);
+    }
+    else {
+      console.warn('UNKNOWN consumer kind=' + kind);
+    }
   }
 
   // ---- UI control ----

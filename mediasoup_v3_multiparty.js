@@ -105,7 +105,7 @@ io.on('connection', function (socket) {
 
   socket.on('getRouterRtpCapabilities', (data, callback) => {
     if (router) {
-      console.log('getRouterRtpCapabilities: ', router.rtpCapabilities);
+      //console.log('getRouterRtpCapabilities: ', router.rtpCapabilities);
       sendResponse(router.rtpCapabilities, callback);
     }
     else {
@@ -120,10 +120,15 @@ io.on('connection', function (socket) {
     addProducerTrasport(getId(socket), transport);
     transport.observer.on('close', () => {
       const id = getId(socket);
-      const producer = getProducer(id);
-      if (producer) {
-        producer.close();
-        removeProducer(id);
+      const videoProducer = getProducer(id, 'video');
+      if (videoProducer) {
+        videoProducer.close();
+        removeProducer(id, 'video');
+      }
+      const audioProducer = getProducer(id, 'audio');
+      if (audioProducer) {
+        audioProducer.close();
+        removeProducer(id, 'audio');
       }
       removeProducerTransport(id);
     });
@@ -138,8 +143,8 @@ io.on('connection', function (socket) {
   });
 
   socket.on('produce', async (data, callback) => {
-    console.log('-- produce ---');
     const { kind, rtpParameters } = data;
+    console.log('-- produce --- kind=' + kind);
     const id = getId(socket);
     const transport = getProducerTrasnport(id);
     if (!transport) {
@@ -147,9 +152,9 @@ io.on('connection', function (socket) {
       return;
     }
     const producer = await transport.produce({ kind, rtpParameters });
-    addProducer(id, producer);
+    addProducer(id, producer, kind);
     producer.observer.on('close', () => {
-      console.log('producer closed ---');
+      console.log('producer closed --- kind=' + kind);
     })
     sendResponse({ id: producer.id }, callback);
 
@@ -193,55 +198,29 @@ io.on('connection', function (socket) {
   socket.on('consume', async (data, callback) => {
     console.error('-- ERROR: consume NOT SUPPORTED ---');
     return;
-    /*--
-    console.log('-- consume ---');
-    let transport = getConsumerTrasnport(getId(socket));
-    if (!transport) {
-      console.error('transport NOT EXIST for id=' + getId(socket));
-      return;
-    }
-    const producer = getProducer(getId(socket));
-    const { consumer, params } = await createConsumer(transport, producer, data.rtpCapabilities); // producer must exist before consume
-    //subscribeConsumer = consumer;
-    addConsumer(getId(socket), consumer);
-    consumer.observer.on('close', () => {
-      console.log('consumer closed ---');
-    })
-
-    console.log('-- consumer ready ---');
-    sendResponse(params, callback);
-    ---*/
   });
 
   socket.on('resume', async (data, callback) => {
     console.error('-- ERROR: resume NOT SUPPORTED ---');
     return;
-    /*--
-    console.log('-- resume ---');
-    let consumer = getConsumer(getId(socket));
-    if (!consumer) {
-      console.error('consumer NOT EXIST for id=' + getId(socket));
-      return;
-    }
-    await consumer.resume();
-    sendResponse({}, callback);
-    --*/
   });
 
   socket.on('getCurrentProducers', async (data, callback) => {
     const clientId = data.localId;
     console.log('-- getCurrentProducers for Id=' + clientId);
 
-    //const producerIds = getProducerIds(clientId);
-    //console.log('-- producerIds:', producerIds);
-    const remoteIds = getRemoteIds(clientId);
-    console.log('-- remoteIds:', remoteIds);
-    sendResponse({ remoteIds: remoteIds }, callback);
+    const remoteVideoIds = getRemoteIds(clientId, 'video');
+    console.log('-- remoteVideoIds:', remoteVideoIds);
+    const remoteAudioIds = getRemoteIds(clientId, 'audio');
+    console.log('-- remoteAudioIds:', remoteAudioIds);
+
+    sendResponse({ remoteVideoIds: remoteVideoIds, remoteAudioIds: remoteAudioIds }, callback);
   });
 
   socket.on('consumeAdd', async (data, callback) => {
     const localId = getId(socket);
-    console.log('-- consumeAdd -- localId=' + localId);
+    const kind = data.kind;
+    console.log('-- consumeAdd -- localId=%s kind=%s', localId, kind);
 
     let transport = getConsumerTrasnport(localId);
     if (!transport) {
@@ -250,26 +229,26 @@ io.on('connection', function (socket) {
     }
     const rtpCapabilities = data.rtpCapabilities;
     const remoteId = data.remoteId;
-    console.log('-- consumeAdd - localId=' + localId + ' remoteId=' + remoteId);
-    const producer = getProducer(remoteId);
+    console.log('-- consumeAdd - localId=' + localId + ' remoteId=' + remoteId + ' kind=' + kind);
+    const producer = getProducer(remoteId, kind);
     if (!producer) {
-      console.error('producer NOT EXIST for remoteId=' + remoteId);
+      console.error('producer NOT EXIST for remoteId=%s kind=%s', remoteId, kind);
       return;
     }
     const { consumer, params } = await createConsumer(transport, producer, rtpCapabilities); // producer must exist before consume
     //subscribeConsumer = consumer;
-    addConsumer(localId, remoteId, consumer); // TODO: MUST comination of  local/remote id
-    console.log('addConsumer localId=' + localId + ', remoteId=' + remoteId);
+    addConsumer(localId, remoteId, consumer, kind); // TODO: MUST comination of  local/remote id
+    console.log('addConsumer localId=%s, remoteId=%s, kind=%s', localId, remoteId, kind);
     consumer.observer.on('close', () => {
       console.log('consumer closed ---');
     })
     consumer.on('producerclose', () => {
       console.log('consumer -- on.producerclose');
       consumer.close();
-      removeConsumer(localId, remoteId);
+      removeConsumer(localId, remoteId, kind);
 
       // -- notify to client ---
-      socket.emit('producerClosed', { localId: localId, remoteId: remoteId });
+      socket.emit('producerClosed', { localId: localId, remoteId: remoteId, kind: kind });
     });
 
     console.log('-- consumer ready ---');
@@ -279,8 +258,9 @@ io.on('connection', function (socket) {
   socket.on('resumeAdd', async (data, callback) => {
     const localId = getId(socket);
     const remoteId = data.remoteId;
-    console.log('-- resumeAdd localId=' + localId + ', remoteId=' + remoteId);
-    let consumer = getConsumer(localId, remoteId);
+    const kind = data.kind;
+    console.log('-- resumeAdd localId=%s remoteId=%s kind=%s', localId, remoteId, kind);
+    let consumer = getConsumer(localId, remoteId, kind);
     if (!consumer) {
       console.error('consumer NOT EXIST for remoteId=' + remoteId);
       return;
@@ -339,10 +319,15 @@ function cleanUpPeer(socket) {
     removeConsumerTransport(id);
   }
 
-  const producer = getProducer(id);
-  if (producer) {
-    producer.close();
-    removeProducer(id);
+  const videoProducer = getProducer(id, 'video');
+  if (videoProducer) {
+    videoProducer.close();
+    removeProducer(id, 'video');
+  }
+  const audioProducer = getProducer(id, 'audio');
+  if (audioProducer) {
+    audioProducer.close();
+    removeProducer(id, 'audio');
   }
 
   const producerTransport = getProducerTrasnport(id);
@@ -437,7 +422,8 @@ startWorker();
 
 // --- multi-producers --
 let producerTransports = {};
-let producers = {};
+let videoProducers = {};
+let audioProducers = {};
 
 function getProducerTrasnport(id) {
   return producerTransports[id];
@@ -453,8 +439,17 @@ function removeProducerTransport(id) {
   console.log('producerTransports count=' + Object.keys(producerTransports).length);
 }
 
-function getProducer(id) {
-  return producers[id];
+function getProducer(id, kind) {
+
+  if (kind === 'video') {
+    return videoProducers[id];
+  }
+  else if (kind === 'audio') {
+    return audioProducers[id];
+  }
+  else {
+    console.warn('UNKNOWN producer kind=' + kind);
+  }
 }
 
 /*
@@ -469,31 +464,59 @@ function getProducerIds(clientId) {
 }
 */
 
-function getRemoteIds(clientId) {
+function getRemoteIds(clientId, kind) {
   let remoteIds = [];
-  for (const key in producers) {
-    if (key !== clientId) {
-      remoteIds.push(key);
+  if (kind === 'video') {
+    for (const key in videoProducers) {
+      if (key !== clientId) {
+        remoteIds.push(key);
+      }
+    }
+  }
+  else if (kind === 'audio') {
+    for (const key in audioProducers) {
+      if (key !== clientId) {
+        remoteIds.push(key);
+      }
     }
   }
   return remoteIds;
 }
 
 
-function addProducer(id, producer) {
-  producers[id] = producer;
-  console.log('producers count=' + Object.keys(producers).length);
+function addProducer(id, producer, kind) {
+  if (kind === 'video') {
+    videoProducers[id] = producer;
+    console.log('videoProducers count=' + Object.keys(videoProducers).length);
+  }
+  else if (kind === 'audio') {
+    audioProducers[id] = producer;
+    console.log('audioProducers count=' + Object.keys(audioProducers).length);
+  }
+  else {
+    console.warn('UNKNOWN producer kind=' + kind);
+  }
 }
 
-function removeProducer(id) {
-  delete producers[id];
-  console.log('producers count=' + Object.keys(producers).length);
+function removeProducer(id, kind) {
+  if (kind === 'video') {
+    delete videoProducers[id];
+    console.log('videoProducers count=' + Object.keys(videoProducers).length);
+  }
+  else if (kind === 'audio') {
+    delete audioProducers[id];
+    console.log('audioProducers count=' + Object.keys(audioProducers).length);
+  }
+  else {
+    console.warn('UNKNOWN producer kind=' + kind);
+  }
 }
 
 
 // --- multi-consumers --
 let consumerTransports = {};
-let consumers = {};
+let videoConsumers = {};
+let audioConsumers = {};
 
 function getConsumerTrasnport(id) {
   return consumerTransports[id];
@@ -509,11 +532,19 @@ function removeConsumerTransport(id) {
   console.log('consumerTransports count=' + Object.keys(consumerTransports).length);
 }
 
-function getConsumerSet(localId) {
-  return consumers[localId];
+function getConsumerSet(localId, kind) {
+  if (kind === 'video') {
+    return videoConsumers[localId];
+  }
+  else if (kind === 'audio') {
+    return audioConsumers[localId];
+  }
+  else {
+    console.warn('WARN: getConsumerSet() UNKNWON kind=%s', kind);
+  }
 }
-function getConsumer(localId, remoteId) {
-  const set = getConsumerSet(localId);
+function getConsumer(localId, remoteId, kind) {
+  const set = getConsumerSet(localId, kind);
   if (set) {
     return set[remoteId];
   }
@@ -522,36 +553,35 @@ function getConsumer(localId, remoteId) {
   }
 }
 
-function addConsumer(localId, remoteId, consumer) {
-  const set = getConsumerSet(localId);
+function addConsumer(localId, remoteId, consumer, kind) {
+  const set = getConsumerSet(localId, kind);
   if (set) {
     set[remoteId] = consumer;
-    console.log('consumers count=' + Object.keys(set).length);
+    console.log('consumers kind=%s count=%d', kind, Object.keys(set).length);
   }
   else {
-    console.log('new set for localId=' + localId);
+    console.log('new set for kind=%s, localId=%s', kind, localId);
     const newSet = {};
     newSet[remoteId] = consumer;
-    addConsumerSet(localId, newSet);
-    console.log('consumers count=' + Object.keys(newSet).length);
+    addConsumerSet(localId, newSet, kind);
+    console.log('consumers kind=%s count=%d', kind, Object.keys(newSet).length);
   }
 }
 
-function removeConsumer(localId, remoteId) {
-  const set = getConsumerSet(localId);
+function removeConsumer(localId, remoteId, kind) {
+  const set = getConsumerSet(localId, kind);
   if (set) {
     delete set[remoteId];
-    console.log('consumers count=' + Object.keys(set).length);
+    console.log('consumers kind=%s count=%d', kind, Object.keys(set).length);
   }
   else {
-    console.log('NO set for localId=' + localId);
+    console.log('NO set for kind=%s, localId=%s', kind, localId);
   }
 }
 
 function removeConsumerSetDeep(localId) {
-  const set = getConsumerSet(localId);
-  delete consumers[localId];
-
+  const set = getConsumerSet(localId, 'video');
+  delete videoConsumers[localId];
   if (set) {
     for (const key in set) {
       const consumer = set[key];
@@ -559,12 +589,32 @@ function removeConsumerSetDeep(localId) {
       delete set[key];
     }
 
-    console.log('removeConsumerSetDeep consumers count=' + Object.keys(set).length);
+    console.log('removeConsumerSetDeep video consumers count=' + Object.keys(set).length);
+  }
+
+  const audioSet = getConsumerSet(localId, 'audio');
+  delete audioConsumers[localId];
+  if (audioSet) {
+    for (const key in audioSet) {
+      const consumer = audioSet[key];
+      consumer.close();
+      delete audioSet[key];
+    }
+
+    console.log('removeConsumerSetDeep audio consumers count=' + Object.keys(audioSet).length);
   }
 }
 
-function addConsumerSet(localId, set) {
-  consumers[localId] = set;
+function addConsumerSet(localId, set, kind) {
+  if (kind === 'video') {
+    videoConsumers[localId] = set;
+  }
+  else if (kind === 'audio') {
+    audioConsumers[localId] = set;
+  }
+  else {
+    console.warn('WARN: addConsumerSet() UNKNWON kind=%s', kind);
+  }
 }
 
 async function createTransport() {
