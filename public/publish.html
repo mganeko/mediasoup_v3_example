@@ -270,13 +270,17 @@
     const useAudio = checkUseAudio();
     if (useVideo) {
       const videoTrack = localStream.getVideoTracks()[0];
-      const trackParams = { track: videoTrack };
-      videoProducer = await producerTransport.produce(trackParams);
+      if (videoTrack) {
+        const trackParams = { track: videoTrack };
+        videoProducer = await producerTransport.produce(trackParams);
+      }
     }
     if (useAudio) {
       const audioTrack = localStream.getAudioTracks()[0];
-      const trackParams = { track: audioTrack };
-      audioProducer = await producerTransport.produce(trackParams);
+      if (audioTrack) {
+        const trackParams = { track: audioTrack };
+        audioProducer = await producerTransport.produce(trackParams);
+      }
     }
 
     updateButtons();
@@ -321,6 +325,8 @@
   function updateButtons() {
     if (localStream) {
       disableElement('start_video_button');
+      disableElement('use_video');
+      disableElement('use_audio');
       if (isSocketConnected()) {
         disableElement('stop_video_button');
       }
@@ -337,6 +343,8 @@
     }
     else {
       enabelElement('start_video_button');
+      enabelElement('use_video');
+      enabelElement('use_audio');
       disableElement('stop_video_button');
       disableElement('publish_button');
     }
