@@ -8,7 +8,8 @@
     "build-client": "node_modules/browserify/bin/cmd.js node_modules/mediasoup-client/lib/index.js -s MediasoupClient -o public/js/mediasoup-client.js",
     "loopback": "node mediasoup_v3_loopback.js",
     "broadcast": "node mediasoup_v3_broadcast.js",
-    "multiparty": "node mediasoup_v3_multiparty.js"
+    "multiparty": "node mediasoup_v3_multiparty.js",
+    "multiroom": "node mediasoup_v3_multiroom.js"
   },
   "keywords": [
     "webrtc"
