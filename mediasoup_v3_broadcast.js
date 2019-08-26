@@ -180,6 +180,11 @@ io.on('connection', function (socket) {
         consumer.close();
         removeVideoConsumer(id);
       }
+      consumer = getAudioConsumer(getId(socket));
+      if (consumer) {
+        consumer.close();
+        removeAudioConsumer(id);
+      }
       removeConsumerTransport(id);
     });
     //console.log('-- createTransport params:', params);
