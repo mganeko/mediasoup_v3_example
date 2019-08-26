@@ -26,7 +26,7 @@
 //   npm run build-client
 //
 // run
-//   npm run broadcast
+//   npm run multiroom
 
 'use strict';
 
