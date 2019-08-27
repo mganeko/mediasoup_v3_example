@@ -144,7 +144,13 @@ io.on('connection', function (socket) {
     console.log('-- produce --- kind=', kind);
     if (kind === 'video') {
       videoProducer = await producerTransport.produce({ kind, rtpParameters });
-      await router1.pipeToRouter({ producerId: videoProducer.id, router: router2 }); // pipe router1 --> router2
+
+      // -- auto pipe ---
+      // await router1.pipeToRouter({ producerId: videoProducer.id, router: router2 }); // pipe router1 --> router2
+
+      // -- manual pipe --
+      await pipeProducerToConsumer(videoProducer);
+
       videoProducer.observer.on('close', () => {
         console.log('videoProducer closed ---');
       })
@@ -152,7 +158,13 @@ io.on('connection', function (socket) {
     }
     else if (kind === 'audio') {
       audioProducer = await producerTransport.produce({ kind, rtpParameters });
-      await router1.pipeToRouter({ producerId: audioProducer.id, router: router2 }); // pipe router1 --> router2
+
+      // -- auto pipe --
+      // await router1.pipeToRouter({ producerId: audioProducer.id, router: router2 }); // pipe router1 --> router2
+
+      // -- manual pipe --
+      await pipeProducerToConsumer(audioProducer);
+
       audioProducer.observer.on('close', () => {
         console.log('audioProducer closed ---');
       })
@@ -424,7 +436,8 @@ let worker2 = null;
 let router1 = null;
 let router2 = null;
 let producerTransport = null;
-//let pipeTransport = null;
+let pipeTransport1 = null;
+let pipeTransport2 = null;
 let videoProducer = null;
 let audioProducer = null;
 let producerSocketId = null;
@@ -441,10 +454,103 @@ async function startWorker() {
   worker2 = await mediasoup.createWorker();
   router2 = await worker2.createRouter({ mediaCodecs });
 
+  try {
+    pipeTransport1 = await router1.createPipeTransport(
+      {
+        listenIp: "127.0.0.1"
+      });
+    pipeTransport2 = await router2.createPipeTransport(
+      {
+        listenIp: "127.0.0.1"
+      });
+
+    await Promise.all(
+      [
+        pipeTransport1.connect(
+          {
+            ip: pipeTransport2.tuple.localIp,
+            port: pipeTransport2.tuple.localPort
+          }),
+        pipeTransport2.connect(
+          {
+            ip: pipeTransport1.tuple.localIp,
+            port: pipeTransport1.tuple.localPort
+          })
+      ]);
+
+    pipeTransport1.observer.on('close', () => {
+      console.log('==== pipeTransport1 closed ======');
+      pipeTransport2.close();
+    });
+    pipeTransport2.observer.on('close', () => {
+      console.log('==== pipeTransport2 closed ======');
+      pipeTransport1.close();
+    });
+  }
+  catch (err) {
+    console.error('pipeTransport ERROR:', err);
+    if (pipeTransport1) {
+      pipeTransport1.close();
+      pipeTransport1 = null;
+    }
+    if (pipeTransport2) {
+      pipeTransport2.close();
+      pipeTransport2 = null;
+    }
+  }
+
+
+
   console.log('-- mediasoup worker start. --')
 }
 
 startWorker();
+
+// --- manual pipe --
+async function pipeProducerToConsumer(producer) {
+  let pipeConsumer;
+  let pipeProducer;
+
+  try {
+    pipeConsumer = await pipeTransport1.consume(
+      {
+        producerId: producer.id,
+        paused: producer.paused
+      });
+
+    pipeProducer = await pipeTransport2.produce(
+      {
+        id: producer.id,
+        kind: pipeConsumer.kind,
+        rtpParameters: pipeConsumer.rtpParameters,
+        appData: producer.appData,
+        paused: pipeConsumer.producerPaused
+      });
+
+    // Pipe events from the pipe Consumer to the pipe Producer.
+    pipeConsumer.observer.on('close', () => pipeProducer.close());
+    pipeConsumer.observer.on('pause', () => pipeProducer.pause());
+    pipeConsumer.observer.on('resume', () => pipeProducer.resume());
+
+    // Pipe events from the pipe Producer to the pipe Consumer.
+    pipeProducer.observer.on('close', () => pipeConsumer.close());
+
+    return { pipeConsumer, pipeProducer };
+  }
+  catch (error) {
+    console.error(
+      'pipeToRouter() | error creating pipe Consumer/Producer pair:%o',
+      error);
+
+    if (pipeConsumer)
+      pipeConsumer.close();
+
+    if (pipeProducer)
+      pipeProducer.close();
+
+    throw error;
+  }
+}
 
 //
 // Room {
