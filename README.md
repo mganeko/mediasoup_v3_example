@@ -61,7 +61,7 @@ open http://localhost:3000/loopback.html with browser
 ## broadcast (1 to many)
 
 ```
-$ npm run broadast
+$ npm run broadcast
 ```
 
 open http://localhost:3000/publish.html with browser for publisher
